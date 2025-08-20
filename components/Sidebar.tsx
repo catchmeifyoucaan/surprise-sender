@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import {
   HomeIcon,
   EnvelopeIcon,
@@ -10,7 +11,9 @@ import {
   QuestionMarkCircleIcon,
   UsersIcon,
   ShieldCheckIcon,
-  DocumentTextIcon
+  DocumentTextIcon,
+  ServerIcon,
+  CpuChipIcon
 } from '@heroicons/react/24/outline';
 
 interface SidebarProps {
@@ -27,6 +30,8 @@ const navigation = [
   { name: 'Agents', href: '/agents', icon: UserGroupIcon },
   { name: 'User Management', href: '/users', icon: UsersIcon },
   { name: 'Admin Users', href: '/admin-users', icon: ShieldCheckIcon },
+  { name: 'Advanced Admin', href: '/admin-dashboard', icon: CpuChipIcon, adminOnly: true },
+  { name: 'SMTP Manager', href: '/smtp-manager', icon: ServerIcon, adminOnly: true },
   { name: 'Tracking', href: '/tracking', icon: ChartBarIcon },
   { name: 'Settings', href: '/settings', icon: Cog6ToothIcon },
   { name: 'Support', href: '/support', icon: QuestionMarkCircleIcon }
@@ -34,6 +39,7 @@ const navigation = [
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const location = useLocation();
+  const { user } = useAuth();
 
   return (
     <>
@@ -65,6 +71,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
             {navigation.map((item) => {
               const isActive = location.pathname === item.href;
+              
+              // Hide admin-only items for non-admin users
+              if (item.adminOnly && user?.role !== 'admin') {
+                return null;
+              }
+              
               return (
                 <Link
                   key={item.name}

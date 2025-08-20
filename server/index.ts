@@ -22,6 +22,7 @@ import { errorHandler } from './middleware/validation';
 // Import new route modules
 import emailRoutes from './routes/email';
 import agentRoutes from './routes/agents';
+import adminRoutes from './routes/admin';
 
 // Extend Express Request type to include user
 declare global {
@@ -179,6 +180,7 @@ AppDataSource.initialize()
 // Use new modular routes
 app.use('/api/email', emailRoutes);
 app.use('/api/agents', agentRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Legacy routes (to be migrated gradually)
 // Authentication routes

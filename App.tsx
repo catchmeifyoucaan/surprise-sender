@@ -16,6 +16,8 @@ import HtmlBulkSenderPage from './pages/HtmlBulkSenderPage';
 import SupportPage from './pages/SupportPage';
 import EmailPage from './pages/EmailPage';
 import UserManagementPage from './pages/UserManagementPage';
+import AdvancedAdminDashboard from './pages/AdvancedAdminDashboard';
+import AdvancedSmtpManager from './pages/AdvancedSmtpManager';
 import { useAuth } from './context/AuthContext';
 import LoadingSpinner from './components/common/LoadingSpinner';
 
@@ -69,6 +71,8 @@ const App: React.FC = () => {
           <Route path="/support" element={<SupportPage />} />
           <Route path="/users" element={<UserManagementPage />} />
           <Route path="/admin-users" element={<AdminUsersPage />} />
+          <Route path="/admin-dashboard" element={<AdvancedAdminDashboard />} />
+          <Route path="/smtp-manager" element={<AdvancedSmtpManager />} />
         </Route>
         
         {/* Fallback Route Handling */}
