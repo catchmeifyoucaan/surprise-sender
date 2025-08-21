@@ -4,6 +4,7 @@ import { ApiKeyEntity } from './entities/ApiKeyEntity';
 
 const isProduction = process.env.NODE_ENV === 'production';
 const hasDatabaseUrl = !!process.env.DATABASE_URL;
+const hasExplicitHost = !!process.env.DB_HOST;
 
 const baseOptions = {
   entities: [
@@ -50,8 +51,9 @@ const postgresOptions = hasDatabaseUrl
     extra: { ssl: { rejectUnauthorized: false } }
   };
 
+const usePostgres = isProduction && (hasDatabaseUrl || hasExplicitHost);
 const options: any = {
-  ...(isProduction ? postgresOptions : sqliteOptions),
+  ...(usePostgres ? postgresOptions : sqliteOptions),
   ...baseOptions
 };
 
