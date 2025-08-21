@@ -70,8 +70,8 @@ const App: React.FC = () => {
           <Route path="/tracking" element={<TrackingPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/support" element={<SupportPage />} />
-          <Route path="/users" element={<UserManagementPage />} />
-          <Route path="/admin-users" element={<AdminUsersPage />} />
+          <Route path="/users" element={<Navigate to="/admin-dashboard" replace />} />
+          <Route path="/admin-users" element={<Navigate to="/admin-dashboard" replace />} />
           <Route path="/admin-dashboard" element={<AdvancedAdminDashboard />} />
           <Route path="/smtp-manager" element={<AdvancedSmtpManager />} />
           <Route path="/templates" element={<TemplatesPage />} />

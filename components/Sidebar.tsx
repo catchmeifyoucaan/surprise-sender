@@ -28,8 +28,6 @@ const navigation = [
   { name: 'Bulk SMS', href: '/bulk-sms', icon: ChatBubbleLeftRightIcon },
   { name: 'HTML Bulk Sender', href: '/html-bulk-sender', icon: DocumentTextIcon },
   { name: 'Agents', href: '/agents', icon: UserGroupIcon },
-  { name: 'User Management', href: '/users', icon: UsersIcon },
-  { name: 'Admin Users', href: '/admin-users', icon: ShieldCheckIcon },
   { name: 'Advanced Admin', href: '/admin-dashboard', icon: CpuChipIcon, adminOnly: true },
   { name: 'SMTP Manager', href: '/smtp-manager', icon: ServerIcon, adminOnly: true },
   { name: 'Tracking', href: '/tracking', icon: ChartBarIcon },

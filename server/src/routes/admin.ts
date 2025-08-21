@@ -131,6 +131,30 @@ router.get('/activities', asyncHandler(async (req: Request, res: Response) => {
   res.json(createApiResponse(true, formattedActivities, undefined, 'User activities retrieved'));
 }));
 
+// List Users (for admin management)
+router.get('/users', asyncHandler(async (_req: Request, res: Response) => {
+  const userRepo = AppDataSource.getRepository(User);
+  const users = await userRepo.find({ order: { createdAt: 'DESC' } });
+  res.json(createApiResponse(true, users));
+}));
+
+// Change User Role (promote/demote)
+const ChangeRoleSchema = z.object({
+  role: z.enum(['admin', 'manager', 'user', 'viewer'])
+});
+router.post('/users/:userId/role', validateRequest(ChangeRoleSchema), asyncHandler(async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  const { role } = req.body as { role: string };
+  const userRepo = AppDataSource.getRepository(User);
+  const user = await userRepo.findOne({ where: { id: userId } });
+  if (!user) {
+    return res.status(404).json(createApiResponse(false, undefined, 'User not found'));
+  }
+  user.role = role;
+  await userRepo.save(user);
+  return res.json(createApiResponse(true, user, undefined, 'User role updated'));
+}));
+
 // Email Campaigns
 router.get('/campaigns', asyncHandler(async (_req: Request, res: Response) => {
   // Not supported by current schema; return empty list

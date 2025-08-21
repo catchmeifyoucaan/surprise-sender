@@ -49,16 +49,27 @@ AppDataSource.initialize()
     // Seed default admin (optional)
     (async () => {
       try {
-        const adminEmail = process.env.ADMIN_EMAIL || 'admin@surprise-sender.local';
+        const rawAdminEmails = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || 'admin-0@surprise-sender.com,admin@surprise-sender.local';
+        const adminEmails: string[] = rawAdminEmails.split(',').map((e) => e.trim()).filter(Boolean);
         const adminPassword = process.env.ADMIN_PASSWORD || 'admin1234';
         const userRepo = AppDataSource.getRepository(require('./entities/User').User);
-        let admin = await userRepo.findOne({ where: { email: adminEmail } });
-        if (!admin) {
-          const bcrypt = require('bcrypt');
-          const hashed = await bcrypt.hash(adminPassword, 12);
-          admin = userRepo.create({ name: 'Administrator', email: adminEmail, password: hashed, role: 'admin', status: 'active' });
-          await userRepo.save(admin);
-          console.log(`Seeded admin user ${adminEmail}`);
+        const bcrypt = require('bcrypt');
+        for (const email of adminEmails) {
+          try {
+            let existing = await userRepo.findOne({ where: { email } });
+            if (!existing) {
+              const hashed = await bcrypt.hash(adminPassword, 12);
+              const created = userRepo.create({ name: 'Administrator', email, password: hashed, role: 'admin', status: 'active' });
+              await userRepo.save(created);
+              console.log(`Seeded admin user ${email}`);
+            } else if (existing.role !== 'admin') {
+              existing.role = 'admin';
+              await userRepo.save(existing);
+              console.log(`Upgraded user to admin: ${email}`);
+            }
+          } catch (innerErr) {
+            console.error('Admin seed per-email failed:', email, innerErr);
+          }
         }
       } catch (e) {
         console.error('Admin seed failed:', e);
