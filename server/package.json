@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "tsc",
+    "postbuild": "cd .. && npm run build",
     "start": "node dist/index.js",
     "start:prod": "node dist/index.js",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/data-source.ts",
