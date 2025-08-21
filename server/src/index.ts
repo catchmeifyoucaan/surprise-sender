@@ -5,6 +5,7 @@ import { AppDataSource } from './data-source';
 import emailRoutes from './routes/email';
 import agentRoutes from './routes/agents';
 import adminRoutes from './routes/admin';
+import appRoutes from './routes/app';
 import { errorHandler } from './middleware/validation';
 
 const app = express();
@@ -26,6 +27,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use('/api/email', emailRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api', appRoutes);
 app.get('/api/health', (_req: Request, res: Response) => res.json({ ok: true }));
 
 // Static frontend (Vite build in root/dist). __dirname is server/dist at runtime.
