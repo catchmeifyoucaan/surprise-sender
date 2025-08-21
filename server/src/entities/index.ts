@@ -6,3 +6,4 @@ export { Campaign } from './Campaign';
 export { Agent } from './Agent';
 export { UserPreferencesEntity } from './UserPreferences';
 export { EmailTracking } from './EmailTracking'; 
+export { LandingPage } from './LandingPage';

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { AppDataSource } from '../data-source';
-import { User, UserActivity, SmtpConfiguration, EmailTracking } from '../entities';
+import { User, UserActivity, SmtpConfiguration, EmailTracking, LandingPage } from '../entities';
 import { authenticateJWT } from '../middleware/auth';
 import { validateSmtpConfig, validateAndProcessFile } from '../utils/smtp';
 import multer from 'multer';
@@ -182,5 +182,56 @@ router.get('/tracking/stats', authenticateJWT, async (_req, res) => {
 let telegramConfig: any = null;
 router.post('/telegram/config', authenticateJWT, (req, res) => { telegramConfig = req.body; return res.json({ success: true }); });
 router.get('/telegram/config', authenticateJWT, (_req, res) => res.json({ success: true, config: telegramConfig }));
+
+// Landing Pages CRUD and generation
+router.get('/landing-pages', authenticateJWT, async (req, res) => {
+  const repo = AppDataSource.getRepository(LandingPage);
+  const pages = await repo.find({ where: { user: { id: req.user!.id } } as any, order: { updatedAt: 'DESC' } });
+  return res.json(pages);
+});
+
+router.post('/landing-pages', authenticateJWT, async (req, res) => {
+  const repo = AppDataSource.getRepository(LandingPage);
+  const body = req.body || {};
+  const page = repo.create({
+    name: body.name || 'Landing Page',
+    sourceType: body.sourceType || 'template',
+    html: body.html || '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/></head><body><h1>New Page</h1></body></html>',
+    css: body.css || '',
+    url: body.url,
+    assets: body.assets || {},
+    user: req.user!
+  });
+  const saved = await repo.save(page);
+  return res.status(201).json(saved);
+});
+
+router.post('/landing-pages/generate', authenticateJWT, async (req, res) => {
+  const prompt = (req.body?.prompt || '').toString();
+  if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+  // Basic generator placeholder; integrate real model later
+  const title = `Generated: ${prompt}`;
+  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title}</title><style>body{font-family:sans-serif;margin:0;padding:24px}section{max-width:900px;margin:auto}header,footer{background:#0b132b;color:#fff;padding:16px;border-radius:8px}main{padding:16px}button{background:#1c2541;color:#fff;border:none;padding:12px 16px;border-radius:6px}</style></head><body><header><h1>${title}</h1></header><main><section><p>This is a responsive landing page generated from your prompt.</p><p>Prompt: ${prompt}</p><button>Get Started</button></section></main><footer><small>© Surprise Sender</small></footer></body></html>`;
+  const repo = AppDataSource.getRepository(LandingPage);
+  const saved = await repo.save(repo.create({ name: title, sourceType: 'generated', html, user: req.user! }));
+  return res.json(saved);
+});
+
+router.patch('/landing-pages/:id', authenticateJWT, async (req, res) => {
+  const repo = AppDataSource.getRepository(LandingPage);
+  const page = await repo.findOne({ where: { id: req.params.id } });
+  if (!page) return res.status(404).json({ error: 'Not found' });
+  Object.assign(page, req.body || {});
+  const saved = await repo.save(page);
+  return res.json(saved);
+});
+
+router.delete('/landing-pages/:id', authenticateJWT, async (req, res) => {
+  const repo = AppDataSource.getRepository(LandingPage);
+  const page = await repo.findOne({ where: { id: req.params.id } });
+  if (!page) return res.status(404).json({ error: 'Not found' });
+  await repo.remove(page);
+  return res.json({ success: true });
+});
 
 export default router;
