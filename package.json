@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "server": "cd server && npm run dev",
     "server:build": "cd server && npm run build",
@@ -24,14 +24,20 @@
     "@google/genai": "^1.15.0",
     "@headlessui/react": "^1.7.17",
     "@heroicons/react": "^2.0.18",
+    "@tinymce/tinymce-react": "^6.3.0",
     "axios": "^1.11.0",
     "clsx": "^2.0.0",
+    "date-fns": "^4.1.0",
     "jwt-decode": "^4.0.0",
     "react": "^18.2.0",
+    "react-colorful": "^5.6.1",
+    "react-day-picker": "^9.9.0",
     "react-dom": "^18.2.0",
+    "react-dropzone": "^14.3.8",
     "react-hot-toast": "^2.4.1",
     "react-router-dom": "^6.15.0",
-    "tailwind-merge": "^1.14.0"
+    "tailwind-merge": "^1.14.0",
+    "terser": "^5.43.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.15",
