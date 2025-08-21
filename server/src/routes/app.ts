@@ -59,7 +59,14 @@ router.post('/auth/disable-2fa', (_req, res) => res.json({ success: true }));
 
 // Users (protected)
 router.get('/users/profile', authenticateJWT, async (req, res) => {
-  return res.json(req.user);
+  try {
+    const repo = AppDataSource.getRepository(User);
+    const user = await repo.findOne({ where: { id: (req.user as any).id } });
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+    return res.json({ id: user.id, name: user.name, email: user.email, role: user.role, company: (user as any).company });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Failed to load profile' });
+  }
 });
 
 router.get('/users/activities', authenticateJWT, async (_req, res) => {
