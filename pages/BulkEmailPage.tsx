@@ -78,7 +78,7 @@ const BulkEmailPage: React.FC = () => {
   const handleFileSelect = useCallback((file: File | null | string) => {
     if (typeof file === 'string') return; // Should not happen for this component
     setRecipientFile(file as File | null);
-    if (file && auth.user) auth.logUserActivity(auth.user.id, `Recipient file selected for bulk email: ${(file as File).name}`);
+    if (file) auth.logUserActivity(`Recipient file selected for bulk email: ${(file as File).name}`);
   }, [auth]);
   
   const handleSuggestSubject = async () => {
@@ -99,7 +99,7 @@ const BulkEmailPage: React.FC = () => {
       if (!suggestion.startsWith("Error:")) {
         setSubject(suggestion.replace(/^["']|["']$/g, ""));
         setFormMessage("AI subject suggestion applied!");
-        auth.logUserActivity(auth.user.id, `AI suggested subject for bulk email: ${suggestion}`);
+        auth.logUserActivity(`AI suggested subject for bulk email: ${suggestion}`);
       } else {
         setFormMessage(suggestion);
       }
@@ -127,7 +127,7 @@ const BulkEmailPage: React.FC = () => {
        if (!suggestion.startsWith("Error:")) {
         setBody(suggestion);
         setFormMessage("AI body enhancement applied!");
-        auth.logUserActivity(auth.user.id, `AI enhanced body for bulk email.`);
+        auth.logUserActivity(`AI enhanced body for bulk email.`);
       } else {
         setFormMessage(suggestion);
       }
@@ -150,7 +150,7 @@ const BulkEmailPage: React.FC = () => {
 
     const campaignDataToLog = { campaignName, recipientsManual: recipientsManual.length, recipientFile: recipientFile?.name, subject, bodyLength: body.length, selectedTemplate, scheduleDateTime, selectedSmtp };
     console.log('Bulk Email Campaign Data:', campaignDataToLog);
-    if(auth.user) auth.logUserActivity(auth.user.id, `Submitted Bulk Email campaign: ${campaignName} via SMTP ID ${selectedSmtp}`);
+    auth.logUserActivity(`Submitted Bulk Email campaign: ${campaignName} via SMTP ID ${selectedSmtp}`);
     
     setTimeout(() => {
       setIsSending(false);
@@ -520,7 +520,7 @@ const BulkEmailPage: React.FC = () => {
                           variant="ghost" 
                           size="sm" 
                           onClick={() => {
-                            if(auth.user) auth.logUserActivity(auth.user.id, `Viewed details for email campaign: ${campaign.name}`);
+                            auth.logUserActivity(`Viewed details for email campaign: ${campaign.name}`);
                             alert(`Viewing details for ${campaign.name} - not fully implemented.`);
                           }} 
                           className="text-accent hover:text-accent-light"

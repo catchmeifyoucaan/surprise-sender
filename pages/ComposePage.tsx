@@ -44,7 +44,7 @@ const ComposePage: React.FC = () => {
 
   useEffect(() => {
     if (auth.user) {
-      auth.logUserActivity(auth.user.id, 'Viewed Compose Page.');
+      auth.logUserActivity('Viewed Compose Page.');
       fetchTemplates();
     }
   }, [auth]);

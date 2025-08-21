@@ -27,7 +27,7 @@ const ProtectedRoutes: React.FC = () => {
     return <div className="flex h-screen items-center justify-center bg-primary"><LoadingSpinner message="Authenticating..." size="lg"/></div>;
   }
   if (!auth.isAuthenticated) {
-    auth.logUserActivity('guest', 'Attempted to access protected route while unauthenticated.');
+    // Avoid logging with a non-existent user to prevent FK violations
     return <Navigate to="/login" replace />;
   }
   return <Layout />;

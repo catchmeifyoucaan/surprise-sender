@@ -123,7 +123,7 @@ const AgentsPage: React.FC = () => {
 
   useEffect(() => {
     if (auth.user) {
-      auth.logUserActivity(auth.user.id, 'Viewed AI Agents Page.');
+      auth.logUserActivity('Viewed AI Agents Page.');
       fetchAgents();
     }
   }, [auth]);

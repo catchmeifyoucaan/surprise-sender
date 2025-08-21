@@ -96,7 +96,7 @@ const BulkSmsPage: React.FC = () => {
   const handleFileSelect = useCallback((file: File | null | string) => {
     if (typeof file === 'string') return; // Should not happen
     setRecipientFile(file as File | null);
-    if (file && auth.user) auth.logUserActivity(auth.user.id, `Recipient file selected for bulk SMS: ${(file as File).name}`);
+    if (file) auth.logUserActivity(`Recipient file selected for bulk SMS: ${(file as File).name}`);
   }, [auth]);
 
   const handleSuggestMessage = async () => {
@@ -117,7 +117,7 @@ const BulkSmsPage: React.FC = () => {
       if (!suggestion.startsWith("Error:")) {
         setMessage(suggestion.substring(0, MAX_SMS_CHARS_SINGLE * 3)); // Allow a bit more for editing
         setFormMessage("AI SMS suggestion applied!");
-        auth.logUserActivity(auth.user.id, `AI suggested SMS message for campaign: ${campaignName}`);
+        auth.logUserActivity(`AI suggested SMS message for campaign: ${campaignName}`);
       } else {
         setFormMessage(suggestion);
       }
@@ -151,7 +151,7 @@ const BulkSmsPage: React.FC = () => {
 
     const smsCampaignDataToLog = { campaignName, recipientsManual: recipientsManual.length, recipientFile: recipientFile?.name, message, senderId, selectedTemplate, scheduleDateTime, selectedGateway };
     console.log('Bulk SMS Campaign Data:', smsCampaignDataToLog);
-    if(auth.user) auth.logUserActivity(auth.user.id, `Submitted Bulk SMS campaign: ${campaignName} via Gateway ${selectedGateway}`);
+    auth.logUserActivity(`Submitted Bulk SMS campaign: ${campaignName} via Gateway ${selectedGateway}`);
     
     setTimeout(() => {
       setIsSending(false);
@@ -494,7 +494,7 @@ const BulkSmsPage: React.FC = () => {
                           variant="ghost" 
                           size="sm" 
                           onClick={() => {
-                            if(auth.user) auth.logUserActivity(auth.user.id, `Viewed details for SMS campaign: ${campaign.name}`);
+                            auth.logUserActivity(`Viewed details for SMS campaign: ${campaign.name}`);
                             alert(`Viewing details for ${campaign.name} - not fully implemented.`);
                           }} 
                           className="text-accent hover:text-accent-light"

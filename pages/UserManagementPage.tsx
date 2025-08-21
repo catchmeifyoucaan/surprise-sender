@@ -81,7 +81,7 @@ const UserManagementPage: React.FC = () => {
 
   useEffect(() => {
     if (auth.user) {
-      auth.logUserActivity(auth.user.id, 'Viewed User Management Page.');
+      auth.logUserActivity('Viewed User Management Page.');
       fetchUsers();
       fetchActivities();
     }

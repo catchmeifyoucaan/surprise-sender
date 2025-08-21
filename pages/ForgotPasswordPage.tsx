@@ -27,7 +27,7 @@ const ForgotPasswordPage: React.FC = () => {
     // Simulate API call for password reset
     setTimeout(() => {
       setMessage(`If an account with the email ${email} exists, a password reset link has been sent. (Mock)`);
-      auth.logUserActivity('guest-forgot-password', `Password reset attempted for email: ${email}`);
+      auth.logUserActivity(`Password reset attempted for email: ${email}`);
       setIsLoading(false);
     }, 1500);
   };

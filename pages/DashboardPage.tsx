@@ -50,7 +50,7 @@ const DashboardPage: React.FC = () => {
 
   useEffect(() => {
     if (auth.user) {
-      auth.logUserActivity(auth.user.id, 'Viewed Dashboard.');
+      auth.logUserActivity('Viewed Dashboard.');
       fetchDashboardData();
     }
   }, [auth.user, timeRange]);

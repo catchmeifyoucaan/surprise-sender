@@ -64,7 +64,7 @@ const EmailComposer: React.FC<EmailComposerProps> = ({ onSend, initialData, isSe
     const newIsHtml = !emailData.isHtml;
     setEmailData(prev => ({ ...prev, isHtml: newIsHtml }));
     setComposerMessage(newIsHtml ? "Switched to HTML mode. Enter raw HTML." : "Switched to Rich Text mode.");
-     if (auth.user) auth.logUserActivity(auth.user.id, `Toggled HTML mode to ${newIsHtml} in main composer.`);
+     auth.logUserActivity(`Toggled HTML mode to ${newIsHtml} in main composer.`);
   };
 
   const handleSuggestSubject = async () => {
@@ -85,7 +85,7 @@ const EmailComposer: React.FC<EmailComposerProps> = ({ onSend, initialData, isSe
       if (!suggestion.startsWith("Error:")) {
         setEmailData(prev => ({ ...prev, subject: suggestion.replace(/^["']|["']$/g, "") }));
         setComposerMessage("AI subject suggestion applied!");
-        auth.logUserActivity(auth.user.id, `AI suggested subject in main composer.`);
+        auth.logUserActivity(`AI suggested subject in main composer.`);
       } else {
         setComposerMessage(suggestion);
       }
@@ -113,7 +113,7 @@ const EmailComposer: React.FC<EmailComposerProps> = ({ onSend, initialData, isSe
        if (!suggestion.startsWith("Error:")) {
         setEmailData(prev => ({ ...prev, body: suggestion }));
         setComposerMessage("AI body enhancement applied!");
-        auth.logUserActivity(auth.user.id, `AI enhanced body in main composer.`);
+        auth.logUserActivity(`AI enhanced body in main composer.`);
       } else {
         setComposerMessage(suggestion);
       }
@@ -151,7 +151,7 @@ const EmailComposer: React.FC<EmailComposerProps> = ({ onSend, initialData, isSe
       if (result.success) {
         setComposerMessage(`Email sent successfully to ${emailData.to}!`);
         if (auth.user) {
-          auth.logUserActivity(auth.user.id, `Sent email to ${emailData.to}: ${emailData.subject}`);
+          auth.logUserActivity(`Sent email to ${emailData.to}: ${emailData.subject}`);
         }
         setEmailData({ id: Date.now().toString(), to: '', subject: '', body: '', isHtml: false, timestamp: new Date().toISOString() }); // Clear form
         onSend(emailData);
@@ -348,7 +348,7 @@ const EmailComposer: React.FC<EmailComposerProps> = ({ onSend, initialData, isSe
                         <span className="text-sm text-text-secondary truncate cursor-pointer hover:text-accent" onClick={() => {
                             setEmailData(draft);
                             setComposerMessage(`Draft "${draft.subject || 'Untitled'}" loaded.`);
-                            if (auth.user) auth.logUserActivity(auth.user.id, `Loaded draft: ${draft.subject || 'Untitled'}`);
+                            auth.logUserActivity(`Loaded draft: ${draft.subject || 'Untitled'}`);
                         }}>
                            To: {draft.to || 'N/A'} - Subject: {draft.subject || 'Untitled Draft'}
                         </span>
@@ -356,12 +356,12 @@ const EmailComposer: React.FC<EmailComposerProps> = ({ onSend, initialData, isSe
                             <Button size="sm" variant="ghost" onClick={() => {
                                 setEmailData(draft);
                                 setComposerMessage(`Draft "${draft.subject || 'Untitled'}" loaded.`);
-                                if (auth.user) auth.logUserActivity(auth.user.id, `Loaded draft: ${draft.subject || 'Untitled'}`);
+                                auth.logUserActivity(`Loaded draft: ${draft.subject || 'Untitled'}`);
                             }} className="mr-1 !p-1 text-sky-400">Load</Button>
                             <Button size="sm" variant="danger" onClick={() => {
                                 auth.deleteEmailDraft(draft.subject || '');
                                 setComposerMessage(`Draft "${draft.subject || 'Untitled'}" deleted.`);
-                                if (auth.user) auth.logUserActivity(auth.user.id, `Deleted draft: ${draft.subject || 'Untitled'}`);
+                                auth.logUserActivity(`Deleted draft: ${draft.subject || 'Untitled'}`);
                             }} className="!p-1">Delete</Button>
                         </div>
                     </li>

@@ -109,32 +109,18 @@ const AdvancedAdminDashboard: React.FC = () => {
   const fetchDashboardData = async () => {
     setIsLoading(true);
     try {
-      const [statsResponse, activitiesResponse, campaignsResponse, alertsResponse] = await Promise.all([
-        fetch(`/api/admin/stats?timeRange=${selectedTimeRange}`),
-        fetch(`/api/admin/activities?timeRange=${selectedTimeRange}`),
-        fetch(`/api/admin/campaigns?timeRange=${selectedTimeRange}`),
-        fetch(`/api/admin/alerts`)
+      const token = localStorage.getItem('surpriseSenderUser');
+      const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
+      const [stats, activities, campaigns, alerts] = await Promise.all([
+        fetch(`/api/admin/stats?timeRange=${selectedTimeRange}`, { headers: { ...authHeader } }).then(r => r.json()).then(d => d.data || d),
+        fetch(`/api/admin/activities?timeRange=${selectedTimeRange}`, { headers: { ...authHeader } }).then(r => r.json()).then(d => d.data || d),
+        fetch(`/api/admin/campaigns?timeRange=${selectedTimeRange}`, { headers: { ...authHeader } }).then(r => r.json()).then(d => d.data || d),
+        fetch(`/api/admin/alerts`, { headers: { ...authHeader } }).then(r => r.json()).then(d => d.data || d)
       ]);
-
-      if (statsResponse.ok) {
-        const stats = await statsResponse.json();
-        setSystemStats(stats);
-      }
-
-      if (activitiesResponse.ok) {
-        const activities = await activitiesResponse.json();
-        setUserActivities(activities);
-      }
-
-      if (campaignsResponse.ok) {
-        const campaigns = await campaignsResponse.json();
-        setEmailCampaigns(campaigns);
-      }
-
-      if (alertsResponse.ok) {
-        const alerts = await alertsResponse.json();
-        setSystemAlerts(alerts);
-      }
+      setSystemStats(stats);
+      setUserActivities(activities);
+      setEmailCampaigns(campaigns);
+      setSystemAlerts(alerts);
     } catch (error) {
       toast.error('Failed to load dashboard data');
     } finally {
@@ -144,9 +130,10 @@ const AdvancedAdminDashboard: React.FC = () => {
 
   const handleUserAction = async (userId: string, action: 'suspend' | 'activate' | 'delete') => {
     try {
+      const token = localStorage.getItem('surpriseSenderUser');
       const response = await fetch(`/api/admin/users/${userId}/${action}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' }
       });
 
       if (response.ok) {
@@ -162,9 +149,10 @@ const AdvancedAdminDashboard: React.FC = () => {
 
   const handleCampaignAction = async (campaignId: string, action: 'pause' | 'resume' | 'stop') => {
     try {
+      const token = localStorage.getItem('surpriseSenderUser');
       const response = await fetch(`/api/admin/campaigns/${campaignId}/${action}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' }
       });
 
       if (response.ok) {
@@ -180,9 +168,10 @@ const AdvancedAdminDashboard: React.FC = () => {
 
   const resolveAlert = async (alertId: string) => {
     try {
+      const token = localStorage.getItem('surpriseSenderUser');
       const response = await fetch(`/api/admin/alerts/${alertId}/resolve`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' }
       });
 
       if (response.ok) {

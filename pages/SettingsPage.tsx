@@ -183,7 +183,7 @@ const SettingsPage: React.FC = () => {
 
   useEffect(() => {
     if (!auth.isLoading && auth.user) {
-      auth.logUserActivity(auth.user.id, 'Viewed Settings Page.');
+      auth.logUserActivity('Viewed Settings Page.');
       fetchSettings();
     }
     // Only run when auth.isLoading or auth.user changes

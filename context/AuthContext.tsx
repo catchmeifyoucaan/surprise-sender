@@ -15,7 +15,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<User>;
   logout: () => void;
   registerUser: (userData: Omit<User, 'id' | 'role' | 'registeredAt'>) => Promise<User>;
-  logUserActivity: (userId: string, activity: string) => Promise<void>;
+  logUserActivity: (activity: string, metadata?: any) => Promise<void>;
   getUserActivities: (userId: string) => UserActivity[];
   setSmtpConfigurations: (configs: SmtpConfiguration[]) => void;
   saveEmailDraft: (draft: EmailData) => void;
@@ -207,7 +207,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setRegisteredUsers(prev => [...prev, newUser]);
       
       // Log activity
-      await logUserActivity(newUser.id, `New user registered: ${newUser.email}`);
+      await logUserActivity(`New user registered: ${newUser.email}`);
       
       return newUser;
     } catch (error) {
@@ -216,10 +216,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const logUserActivity = async (userId: string, activity: string) => {
+  const logUserActivity = async (activity: string, metadata?: any) => {
     try {
-      const newActivity = await usersApi.logActivity(userId, activity);
-      setUserActivities(prev => [...prev, newActivity]);
+      const newActivity = await usersApi.logActivity({ description: activity, metadata: metadata || {} });
+      if (newActivity) {
+        setUserActivities(prev => [...prev, newActivity]);
+      }
     } catch (error) {
       console.error("Error logging activity:", error);
     }

@@ -21,7 +21,7 @@ const Header: React.FC<HeaderProps> = ({ setSidebarOpen }) => {
 
   const handleProfileClick = () => {
     setUserMenuOpen(false);
-    if (auth.user) auth.logUserActivity(auth.user.id, 'Navigated to profile settings.');
+    auth.logUserActivity('Navigated to profile settings.');
     navigate('/settings');
   };
 

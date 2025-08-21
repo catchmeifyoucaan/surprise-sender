@@ -132,7 +132,7 @@ const HtmlBulkSenderPage: React.FC = () => {
         return;
     }
     setCampaignData(prev => ({ ...prev, recipientFile: file as File | null }));
-    if (file && auth.user) auth.logUserActivity(auth.user.id, `Recipient file selected for HTML bulk: (file object)`);
+    if (file) auth.logUserActivity(`Recipient file selected for HTML bulk: (file object)`);
   }, [auth]);
 
   const handleSuggestSubject = async () => {
@@ -153,7 +153,7 @@ const HtmlBulkSenderPage: React.FC = () => {
       if (!suggestion.startsWith("Error:")) {
         setCampaignData(prev => ({ ...prev, subject: suggestion.replace(/^["']|["']$/g, "") }));
         setFormMessage("AI subject suggestion applied!");
-        auth.logUserActivity(auth.user.id, `AI suggested subject for HTML bulk campaign: ${suggestion}`);
+        auth.logUserActivity(`AI suggested subject for HTML bulk campaign: ${suggestion}`);
       } else {
         setFormMessage(suggestion);
       }
@@ -172,7 +172,7 @@ const HtmlBulkSenderPage: React.FC = () => {
     setFormMessage("AI is generating HTML email structure...");
     // Simulate a prompt or get user input
     const descriptionPrompt = campaignData.campaignName || "a general promotional email"; 
-    auth.logUserActivity(auth.user.id, `Initiated AI HTML generation for description: ${descriptionPrompt}`);
+    auth.logUserActivity(`Initiated AI HTML generation for description: ${descriptionPrompt}`);
 
     setTimeout(() => {
       // For demonstration, we use a pre-defined template. A real scenario might involve a more complex AI call.
@@ -222,7 +222,7 @@ const HtmlBulkSenderPage: React.FC = () => {
 
     console.log('HTML Bulk Email Campaign Data:', campaignData);
     const activityDescription = `Submitted HTML Bulk Email campaign: ${campaignData.campaignName} via SMTP IDs ${smtpIdsToUse.join(', ')}`;
-    if (auth.user) auth.logUserActivity(auth.user.id, activityDescription);
+    auth.logUserActivity(activityDescription);
     
     setTimeout(() => {
       setIsSending(false);
@@ -583,7 +583,7 @@ const HtmlBulkSenderPage: React.FC = () => {
                           variant="ghost" 
                           size="sm" 
                           onClick={() => {
-                            if(auth.user) auth.logUserActivity(auth.user.id, `Viewed details for HTML campaign: ${campaign.name}`);
+                            auth.logUserActivity(`Viewed details for HTML campaign: ${campaign.name}`);
                             alert(`Viewing details for ${campaign.name} - not fully implemented.`);
                           }} 
                           className="text-accent hover:text-accent-light"

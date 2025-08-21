@@ -21,7 +21,7 @@ const AdminUsersPage: React.FC = () => {
     setSelectedUser(user);
     setUserSpecificActivities(auth.getUserActivities(user.id));
     setIsModalOpen(true);
-    auth.logUserActivity(auth.user?.id || 'admin-action', `Viewed activity log for user: ${user.email}`);
+    auth.logUserActivity(`Viewed activity log for user: ${user.email}`);
   };
 
   const closeModal = () => {
