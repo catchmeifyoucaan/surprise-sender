@@ -5,7 +5,8 @@ import { AgentSchema } from '../validation/schemas';
 import { agentService } from '../services/agentService';
 import { authenticateJWT } from '../middleware/auth';
 import { AppDataSource } from '../data-source';
-import { Agent } from '../entities';
+import { Agent, SmtpConfiguration } from '../entities';
+import { emailService } from '../services/emailService';
 
 const router = Router();
 
@@ -197,6 +198,35 @@ router.get('/tasks/:taskId',
     }
   })
 );
+
+// Generate and optionally send using SMTP
+router.post('/send-generated', authenticateJWT, asyncHandler(async (req: Request, res: Response) => {
+  const { crewId, context, recipients = [], asHtml = true, smtpConfigId } = (req.body || {}) as any;
+  if (!crewId || !context || !Array.isArray(recipients) || recipients.length === 0) {
+    return res.status(400).json(createApiResponse(false, undefined, 'crewId, context, and recipients are required'));
+  }
+  // Generate content
+  const emailData = await agentService.generateEmailContent(crewId, context);
+  emailData.isHtml = asHtml;
+
+  // Resolve SMTP
+  const smtpRepo = AppDataSource.getRepository(SmtpConfiguration);
+  let smtp: SmtpConfiguration | null = null;
+  if (smtpConfigId) smtp = await smtpRepo.findOne({ where: { id: smtpConfigId } });
+  if (!smtp) {
+    const actives = await smtpRepo.find({ where: { isActive: true } as any, order: { lastValidated: 'DESC' } });
+    smtp = actives[0] || null;
+  }
+  if (!smtp) return res.status(400).json(createApiResponse(false, undefined, 'No active SMTP available'));
+
+  // Send to all recipients
+  const results = [] as any[];
+  for (const to of recipients) {
+    const result = await emailService.sendEmail({ ...emailData, to }, smtp);
+    results.push({ to, ...result });
+  }
+  return res.json(createApiResponse(true, { generated: emailData, results }, undefined, 'Emails processed'));
+}));
 
 // Generate email content using agents
 router.post('/generate-email',
