@@ -1,5 +1,5 @@
-import { GoogleGenAI } from '@google/genai';
-import { Agent } from '../entities/Agent';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { Agent } from '../entities';
 import { AppDataSource } from '../data-source';
 import { EmailData } from '../types';
 import { createApiResponse } from '../middleware/validation';
@@ -37,14 +37,14 @@ interface AgentCrew {
 }
 
 class AgentService {
-  private ai: GoogleGenAI | null = null;
+  private ai: GoogleGenerativeAI | null = null;
   private crews: Map<string, AgentCrew> = new Map();
   private tasks: Map<string, AgentTask> = new Map();
 
   constructor() {
     const apiKey = process.env.GEMINI_API_KEY;
     if (apiKey) {
-      this.ai = new GoogleGenAI({ apiKey });
+      this.ai = new GoogleGenerativeAI(apiKey);
     }
   }
 
@@ -332,7 +332,7 @@ Please synthesize all contributions into a coherent, actionable result.
       subject,
       body,
       isHtml: true,
-      attachments: context.attachments
+      attachments: undefined
     };
   }
 

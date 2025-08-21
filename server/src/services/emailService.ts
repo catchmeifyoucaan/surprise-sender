@@ -95,7 +95,7 @@ class EmailService {
       return this.transporterPool.get(key)!;
     }
 
-    const transporter = nodemailer.createTransporter({
+    const transporter = nodemailer.createTransport({
       host: config.host,
       port: typeof config.port === 'string' ? parseInt(config.port) : config.port,
       secure: config.port === 465 || config.secure,
@@ -133,7 +133,7 @@ class EmailService {
       const transporter = await this.getTransporter(smtpConfig);
 
       // Prepare email options
-      const mailOptions = {
+      const mailOptions: import('nodemailer').SendMailOptions = {
         from: smtpConfig.fromEmail || smtpConfig.username,
         to: emailData.to,
         subject: emailData.subject,
@@ -144,7 +144,7 @@ class EmailService {
         replyTo: emailData.replyTo,
         attachments: emailData.attachments?.map(attachment => ({
           filename: attachment.name,
-          content: attachment,
+          content: (attachment as any).content,
           contentType: attachment.type
         }))
       };
@@ -315,9 +315,7 @@ class EmailService {
       subject: emailData.subject,
       status,
       details: info ? `Message ID: ${info.messageId}` : error || 'Unknown error',
-      smtpConfigId: smtpConfig.id,
-      sentAt: new Date(),
-      messageId: info?.messageId
+      smtpConfigId: smtpConfig.id
     });
 
     const savedTracking = await trackingRepo.save(tracking);
@@ -370,10 +368,11 @@ class EmailService {
 
     const startDate = timeRanges[timeRange];
 
+    const { MoreThan } = await import('typeorm');
     const [total, delivered, failed] = await Promise.all([
-      trackingRepo.count({ where: { sentAt: { $gte: startDate } } }),
-      trackingRepo.count({ where: { sentAt: { $gte: startDate }, status: 'delivered' } }),
-      trackingRepo.count({ where: { sentAt: { $gte: startDate }, status: 'failed' } })
+      trackingRepo.count({ where: { timestamp: MoreThan(startDate) } }),
+      trackingRepo.count({ where: { timestamp: MoreThan(startDate), status: 'delivered' } }),
+      trackingRepo.count({ where: { timestamp: MoreThan(startDate), status: 'failed' } })
     ]);
 
     return {
@@ -390,9 +389,8 @@ class EmailService {
     const trackingRepo = AppDataSource.getRepository(EmailTracking);
     
     return trackingRepo.find({
-      order: { sentAt: 'DESC' },
-      take: limit,
-      relations: ['smtpConfiguration']
+      order: { timestamp: 'DESC' },
+      take: limit
     });
   }
 

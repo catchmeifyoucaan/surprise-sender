@@ -21,14 +21,16 @@
     "lint:fix": "eslint src --ext ts,tsx --fix"
   },
   "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.15.0",
-    "react-hot-toast": "^2.4.1",
+    "@google/genai": "^1.15.0",
     "@headlessui/react": "^1.7.17",
     "@heroicons/react": "^2.0.18",
-    "jwt-decode": "^4.0.0",
+    "axios": "^1.11.0",
     "clsx": "^2.0.0",
+    "jwt-decode": "^4.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-hot-toast": "^2.4.1",
+    "react-router-dom": "^6.15.0",
     "tailwind-merge": "^1.14.0"
   },
   "devDependencies": {

@@ -1,6 +1,7 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { validateRequest, asyncHandler, createApiResponse } from '../middleware/validation';
-import { AgentSchema } from '../validation/schemas';
+import type { ValidatedRequest } from '../middleware/validation';
+import { AgentSchema } from '../../validation/schemas';
 import { agentService } from '../services/agentService';
 import { authenticateJWT } from '../middleware/auth';
 import { AppDataSource } from '../data-source';
@@ -13,7 +14,7 @@ router.use(authenticateJWT);
 
 // Get all agents
 router.get('/',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const agentRepo = AppDataSource.getRepository(Agent);
     const agents = await agentRepo.find({
       where: { user: { id: req.user!.id } },
@@ -26,7 +27,7 @@ router.get('/',
 
 // Get agent by ID
 router.get('/:id',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     
     const agentRepo = AppDataSource.getRepository(Agent);
@@ -45,7 +46,7 @@ router.get('/:id',
 // Create new agent
 router.post('/',
   validateRequest(AgentSchema),
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: ValidatedRequest<any>, res: Response) => {
     const agentData = req.validatedBody!;
     
     const agentRepo = AppDataSource.getRepository(Agent);
@@ -57,7 +58,7 @@ router.post('/',
     const savedAgent = await agentRepo.save(agent);
     
     // Initialize the agent in the service
-    await agentService.initializeAgent(savedAgent);
+    await agentService.initializeAgent(savedAgent as unknown as Agent);
     
     return res.status(201).json(createApiResponse(true, savedAgent, undefined, 'Agent created successfully'));
   })
@@ -66,7 +67,7 @@ router.post('/',
 // Update agent
 router.put('/:id',
   validateRequest(AgentSchema.partial()),
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: ValidatedRequest<any>, res: Response) => {
     const { id } = req.params;
     const updateData = req.validatedBody!;
     
@@ -91,7 +92,7 @@ router.put('/:id',
 
 // Delete agent
 router.delete('/:id',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     
     const agentRepo = AppDataSource.getRepository(Agent);
@@ -111,7 +112,7 @@ router.delete('/:id',
 
 // Create crew
 router.post('/crews',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const { name, description, agentIds } = req.body;
     
     if (!name || !description || !agentIds || !Array.isArray(agentIds)) {
@@ -129,7 +130,7 @@ router.post('/crews',
 
 // Get all crews
 router.get('/crews',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (_req: Request, res: Response) => {
     try {
       const crews = await agentService.getAllCrews();
       return res.json(createApiResponse(true, crews, undefined, 'Crews retrieved successfully'));
@@ -141,7 +142,7 @@ router.get('/crews',
 
 // Get crew status
 router.get('/crews/:id',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     
     try {
@@ -158,7 +159,7 @@ router.get('/crews/:id',
 
 // Assign task to crew
 router.post('/crews/:id/tasks',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const { type, description, priority, metadata } = req.body;
     
@@ -182,7 +183,7 @@ router.post('/crews/:id/tasks',
 
 // Get task status
 router.get('/tasks/:taskId',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const { taskId } = req.params;
     
     try {
@@ -199,7 +200,7 @@ router.get('/tasks/:taskId',
 
 // Generate email content using agents
 router.post('/generate-email',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const { crewId, context } = req.body;
     
     if (!crewId || !context) {
@@ -217,7 +218,7 @@ router.post('/generate-email',
 
 // Analyze content using agents
 router.post('/analyze-content',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const { crewId, content, analysisType } = req.body;
     
     if (!crewId || !content || !analysisType) {

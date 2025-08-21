@@ -11,7 +11,7 @@ export const validateRequest = <T>(
   schema: z.ZodSchema<T>,
   target: 'body' | 'query' | 'params' = 'body'
 ) => {
-  return (req: ValidatedRequest<T>, res: Response, next: NextFunction) => {
+  return (req: ValidatedRequest<T>, res: Response, next: NextFunction): void => {
     try {
       const data = req[target];
       const validatedData = schema.parse(data);
@@ -37,19 +37,21 @@ export const validateRequest = <T>(
           code: err.code
         }));
         
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Validation failed',
           details: validationErrors,
           timestamp: new Date().toISOString()
         });
+        return;
       }
       
-      return res.status(500).json({
+      res.status(500).json({
         success: false,
         error: 'Internal validation error',
         timestamp: new Date().toISOString()
       });
+      return;
     }
   };
 };
@@ -58,13 +60,14 @@ export const validateOptional = <T>(
   schema: z.ZodSchema<T>,
   target: 'body' | 'query' | 'params' = 'body'
 ) => {
-  return (req: ValidatedRequest<T>, res: Response, next: NextFunction) => {
+  return (req: ValidatedRequest<T>, res: Response, next: NextFunction): void => {
     try {
       const data = req[target];
       
       // If no data, continue without validation
       if (!data || Object.keys(data).length === 0) {
-        return next();
+        next();
+        return;
       }
       
       const validatedData = schema.parse(data);
@@ -90,19 +93,21 @@ export const validateOptional = <T>(
           code: err.code
         }));
         
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: 'Validation failed',
           details: validationErrors,
           timestamp: new Date().toISOString()
         });
+        return;
       }
       
-      return res.status(500).json({
+      res.status(500).json({
         success: false,
         error: 'Internal validation error',
         timestamp: new Date().toISOString()
       });
+      return;
     }
   };
 };
@@ -134,24 +139,28 @@ export const errorHandler = (
   req: Request,
   res: Response,
   next: NextFunction
-) => {
+) : void => {
   console.error('Error:', error);
   
   // Handle specific error types
   if (error.name === 'ValidationError') {
-    return res.status(400).json(createApiResponse(false, undefined, 'Validation error', error.message));
+    res.status(400).json(createApiResponse(false, undefined, 'Validation error', error.message));
+    return;
   }
   
   if (error.name === 'UnauthorizedError') {
-    return res.status(401).json(createApiResponse(false, undefined, 'Unauthorized', error.message));
+    res.status(401).json(createApiResponse(false, undefined, 'Unauthorized', error.message));
+    return;
   }
   
   if (error.name === 'ForbiddenError') {
-    return res.status(403).json(createApiResponse(false, undefined, 'Forbidden', error.message));
+    res.status(403).json(createApiResponse(false, undefined, 'Forbidden', error.message));
+    return;
   }
   
   if (error.name === 'NotFoundError') {
-    return res.status(404).json(createApiResponse(false, undefined, 'Not found', error.message));
+    res.status(404).json(createApiResponse(false, undefined, 'Not found', error.message));
+    return;
   }
   
   // Default error response
@@ -161,4 +170,5 @@ export const errorHandler = (
     : error.message;
   
   res.status(statusCode).json(createApiResponse(false, undefined, 'Server error', message));
+  return;
 };

@@ -22,7 +22,7 @@ import { errorHandler } from './middleware/validation';
 // Import new route modules
 import emailRoutes from './routes/email';
 import agentRoutes from './routes/agents';
-import adminRoutes from './routes/admin';
+// import adminRoutes from './routes/admin';
 
 // Extend Express Request type to include user
 declare global {
@@ -48,7 +48,7 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 
 // JWT Authentication middleware
-app.use(async (req: Request, res: Response, next: NextFunction) => {
+app.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
@@ -60,17 +60,19 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
       if (user) {
         req.user = user;
       } else {
-        return res.status(401).json({ message: 'User not found' });
+        res.status(401).json({ message: 'User not found' });
+        return;
       }
     } catch (error) {
-      return res.status(401).json({ message: 'Invalid token' });
+      res.status(401).json({ message: 'Invalid token' });
+      return;
     }
   }
   next();
 });
 
 // Set timeouts for all connections
-app.use((req, res, next) => {
+app.use((req, res, next): void => {
   req.setTimeout(30000);
   res.setTimeout(30000);
   
@@ -113,10 +115,11 @@ app.use((req, res, next) => {
   rateLimit.set(ip, rateLimitEntry);
 
   if (rateLimitEntry.count > MAX_REQUESTS) {
-    return res.status(429).json({
+    res.status(429).json({
       success: false,
       error: 'Too many requests. Please try again later.'
     });
+    return;
   }
 
   next();
@@ -180,28 +183,31 @@ AppDataSource.initialize()
 // Use new modular routes
 app.use('/api/email', emailRoutes);
 app.use('/api/agents', agentRoutes);
-app.use('/api/admin', adminRoutes);
+// app.use('/api/admin', adminRoutes);
 
 // Legacy routes (to be migrated gradually)
 // Authentication routes
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', async (req, res): Promise<void> => {
   try {
     const { email, password } = req.body;
     
     if (!email || !password) {
-      return res.status(400).json({ success: false, error: 'Email and password are required' });
+      res.status(400).json({ success: false, error: 'Email and password are required' });
+      return;
     }
 
     const userRepository = AppDataSource.getRepository(User);
     const user = await userRepository.findOne({ where: { email } });
 
     if (!user) {
-      return res.status(401).json({ success: false, error: 'Invalid credentials' });
+      res.status(401).json({ success: false, error: 'Invalid credentials' });
+      return;
     }
 
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
-      return res.status(401).json({ success: false, error: 'Invalid credentials' });
+      res.status(401).json({ success: false, error: 'Invalid credentials' });
+      return;
     }
 
     // Update last login
@@ -225,18 +231,21 @@ app.post('/api/auth/login', async (req, res) => {
         company: user.company
       }
     });
+    return;
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ success: false, error: 'Login failed' });
+    return;
   }
 });
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', async (req, res): Promise<void> => {
   try {
     const { name, email, password, company } = req.body;
     
     if (!name || !email || !password) {
-      return res.status(400).json({ success: false, error: 'Name, email, and password are required' });
+      res.status(400).json({ success: false, error: 'Name, email, and password are required' });
+      return;
     }
 
     const userRepository = AppDataSource.getRepository(User);
@@ -244,7 +253,8 @@ app.post('/api/auth/register', async (req, res) => {
     // Check if user already exists
     const existingUser = await userRepository.findOne({ where: { email } });
     if (existingUser) {
-      return res.status(400).json({ success: false, error: 'User already exists' });
+      res.status(400).json({ success: false, error: 'User already exists' });
+      return;
     }
 
     // Hash password
@@ -301,9 +311,11 @@ app.post('/api/auth/register', async (req, res) => {
         company: savedUser.company
       }
     });
+    return;
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ success: false, error: 'Registration failed' });
+    return;
   }
 });
 
