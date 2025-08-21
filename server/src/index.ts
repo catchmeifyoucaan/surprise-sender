@@ -46,6 +46,24 @@ app.use(errorHandler);
 AppDataSource.initialize()
   .then(() => {
     const PORT = process.env.PORT || 3001;
+    // Seed default admin (optional)
+    (async () => {
+      try {
+        const adminEmail = process.env.ADMIN_EMAIL || 'admin@surprise-sender.local';
+        const adminPassword = process.env.ADMIN_PASSWORD || 'admin1234';
+        const userRepo = AppDataSource.getRepository(require('./entities/User').User);
+        let admin = await userRepo.findOne({ where: { email: adminEmail } });
+        if (!admin) {
+          const bcrypt = require('bcrypt');
+          const hashed = await bcrypt.hash(adminPassword, 12);
+          admin = userRepo.create({ name: 'Administrator', email: adminEmail, password: hashed, role: 'admin', status: 'active' });
+          await userRepo.save(admin);
+          console.log(`Seeded admin user ${adminEmail}`);
+        }
+      } catch (e) {
+        console.error('Admin seed failed:', e);
+      }
+    })();
     app.listen(PORT, () => {
       // eslint-disable-next-line no-console
       console.log(`Server running on port ${PORT}`);
