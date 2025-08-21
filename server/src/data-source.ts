@@ -3,6 +3,7 @@ import { User, SmtpConfiguration, EmailTracking, UserActivity, EmailTemplate, Ca
 import { ApiKeyEntity } from './entities/ApiKeyEntity';
 
 const isProduction = process.env.NODE_ENV === 'production';
+const hasDatabaseUrl = !!process.env.DATABASE_URL;
 
 const baseOptions = {
   entities: [
@@ -27,21 +28,27 @@ const sqliteOptions = {
   logging: true
 };
 
-const postgresOptions = {
-  type: 'postgres' as const,
-  host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT || '5432'),
-  username: process.env.DB_USERNAME,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  url: process.env.DATABASE_URL,
-  synchronize: false,
-  logging: false,
-  ssl: { rejectUnauthorized: false },
-  extra: {
-    ssl: { rejectUnauthorized: false }
+const postgresOptions = hasDatabaseUrl
+  ? {
+    type: 'postgres' as const,
+    url: process.env.DATABASE_URL,
+    synchronize: false,
+    logging: false,
+    ssl: { rejectUnauthorized: false },
+    extra: { ssl: { rejectUnauthorized: false } }
   }
-};
+  : {
+    type: 'postgres' as const,
+    host: process.env.DB_HOST,
+    port: parseInt(process.env.DB_PORT || '5432'),
+    username: process.env.DB_USERNAME,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    synchronize: false,
+    logging: false,
+    ssl: { rejectUnauthorized: false },
+    extra: { ssl: { rejectUnauthorized: false } }
+  };
 
 const options: any = {
   ...(isProduction ? postgresOptions : sqliteOptions),
