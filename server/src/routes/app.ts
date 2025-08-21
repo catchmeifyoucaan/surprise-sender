@@ -123,6 +123,22 @@ router.patch('/smtp/configs/:id', authenticateJWT, async (req, res) => {
   return res.json({ success: true, configuration: saved });
 });
 
+router.post('/smtp/configs/:id/validate', authenticateJWT, async (req, res) => {
+  try {
+    const repo = AppDataSource.getRepository(SmtpConfiguration);
+    const cfg = await repo.findOne({ where: { id: req.params.id } });
+    if (!cfg) return res.status(404).json({ success: false, error: 'Not found' });
+    const result = await validateSmtpConfig(cfg);
+    cfg.isValid = !!result.success;
+    (cfg as any).lastValidated = new Date();
+    if (!result.success) (cfg as any).lastError = result.error;
+    await repo.save(cfg);
+    return res.json({ success: result.success, error: result.error, configuration: cfg });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message || 'Validation failed' });
+  }
+});
+
 router.delete('/smtp/configs/:id', authenticateJWT, async (req, res) => {
   const repo = AppDataSource.getRepository(SmtpConfiguration);
   const cfg = await repo.findOne({ where: { id: req.params.id } });
