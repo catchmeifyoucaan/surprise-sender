@@ -37,7 +37,8 @@
     "react-hot-toast": "^2.4.1",
     "react-router-dom": "^6.15.0",
     "tailwind-merge": "^1.14.0",
-    "terser": "^5.43.1"
+    "terser": "^5.43.1",
+    "papaparse": "^5.4.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.15",

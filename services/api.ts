@@ -205,4 +205,11 @@ export const telegram = {
   },
 };
 
+export const sms = {
+  sendBulk: async (recipients: string[], message: string, options?: any) => {
+    const response = await api.post('/sms/send-bulk', { recipients, message, ...options });
+    return response.data;
+  }
+};
+
 export default api; 

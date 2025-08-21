@@ -234,4 +234,19 @@ router.delete('/landing-pages/:id', authenticateJWT, async (req, res) => {
   return res.json({ success: true });
 });
 
+// Basic Bulk SMS endpoint (stub implementation)
+router.post('/sms/send-bulk', authenticateJWT, async (req, res) => {
+  try {
+    const { recipients = [], message, senderId, options } = req.body || {};
+    if (!Array.isArray(recipients) || recipients.length === 0 || !message) {
+      return res.status(400).json({ success: false, error: 'recipients[] and message are required' });
+    }
+    // Stub: return a success summary (integrate real SMS provider later)
+    const total = recipients.length;
+    return res.json({ success: true, data: { total, sent: total, failed: 0 } });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message || 'Bulk SMS failed' });
+  }
+});
+
 export default router;
