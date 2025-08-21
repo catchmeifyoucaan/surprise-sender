@@ -47,7 +47,7 @@ export class User {
     @Column('simple-json', { nullable: true })
     preferences!: any;
 
-    @Column('simple-array', { default: [] })
+    @Column('simple-array', { nullable: true })
     permissions!: string[];
 
     @Column('simple-json', { nullable: true })
@@ -62,7 +62,7 @@ export class User {
     @Column({ default: 0 })
     loginAttempts!: number;
 
-    @Column('simple-json', { default: [] })
+    @Column('simple-json', { nullable: true })
     loginHistory!: any[];
 
     @Column({ type: 'datetime', nullable: true })

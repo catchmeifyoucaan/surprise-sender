@@ -4,16 +4,7 @@ import { ApiKeyEntity } from './entities/ApiKeyEntity';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-export const AppDataSource = new DataSource({
-  type: isProduction ? 'postgres' : 'sqlite',
-  host: isProduction ? process.env.DB_HOST : undefined,
-  port: isProduction ? parseInt(process.env.DB_PORT || '5432') : undefined,
-  username: isProduction ? process.env.DB_USERNAME : undefined,
-  password: isProduction ? process.env.DB_PASSWORD : undefined,
-  database: isProduction ? process.env.DB_NAME : './data/database.sqlite',
-  url: isProduction ? process.env.DATABASE_URL : undefined,
-  synchronize: !isProduction, // Only synchronize in development
-  logging: !isProduction,
+const baseOptions = {
   entities: [
     User,
     SmtpConfiguration,
@@ -26,11 +17,35 @@ export const AppDataSource = new DataSource({
     ApiKeyEntity
   ],
   migrations: isProduction ? ['dist/migrations/*.js'] : [],
-  subscribers: [],
-  ssl: isProduction ? { rejectUnauthorized: false } : false,
-  extra: isProduction ? {
-    ssl: {
-      rejectUnauthorized: false
-    }
-  } : {}
-}); 
+  subscribers: []
+};
+
+const sqliteOptions = {
+  type: 'sqlite' as const,
+  database: './data/database.sqlite',
+  synchronize: true,
+  logging: true
+};
+
+const postgresOptions = {
+  type: 'postgres' as const,
+  host: process.env.DB_HOST,
+  port: parseInt(process.env.DB_PORT || '5432'),
+  username: process.env.DB_USERNAME,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  url: process.env.DATABASE_URL,
+  synchronize: false,
+  logging: false,
+  ssl: { rejectUnauthorized: false },
+  extra: {
+    ssl: { rejectUnauthorized: false }
+  }
+};
+
+const options: any = {
+  ...(isProduction ? postgresOptions : sqliteOptions),
+  ...baseOptions
+};
+
+export const AppDataSource = new DataSource(options);

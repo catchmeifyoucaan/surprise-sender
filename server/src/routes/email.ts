@@ -1,10 +1,12 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
+import type { ValidatedRequest } from '../middleware/validation';
 import { validateRequest, asyncHandler, createApiResponse } from '../middleware/validation';
-import { SendEmailSchema, SmtpValidationSchema } from '../validation/schemas';
+import { SendEmailSchema, SmtpValidationSchema } from '../../validation/schemas';
 import { emailService } from '../services/emailService';
 import { authenticateJWT } from '../middleware/auth';
 import { AppDataSource } from '../data-source';
 import { SmtpConfiguration } from '../entities';
+import { validateSmtpConfig } from '../utils/smtp';
 
 const router = Router();
 
@@ -14,7 +16,7 @@ router.use(authenticateJWT);
 // Send single email
 router.post('/send', 
   validateRequest(SendEmailSchema),
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: ValidatedRequest<any>, res: Response) => {
     const { emailData, smtpConfigs } = req.validatedBody!;
     
     const configs = Array.isArray(smtpConfigs) ? smtpConfigs : [smtpConfigs];
@@ -39,7 +41,7 @@ router.post('/send',
 
 // Send bulk emails
 router.post('/send-bulk',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const { emails, smtpConfigs, options } = req.body;
     
     if (!emails || !Array.isArray(emails) || emails.length === 0) {
@@ -61,7 +63,7 @@ router.post('/send-bulk',
 
 // Send templated email
 router.post('/send-template',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const { templateId, variables, recipient, smtpConfigId, customSubject, customBody } = req.body;
     
     if (!templateId || !variables || !recipient || !smtpConfigId) {
@@ -99,13 +101,13 @@ router.post('/send-template',
 // Validate SMTP configurations
 router.post('/validate-smtp',
   validateRequest(SmtpValidationSchema),
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: ValidatedRequest<any>, res: Response) => {
     const { configs } = req.validatedBody!;
     
     const results = await Promise.all(
-      configs.map(async (config) => {
+      configs.map(async (config: SmtpConfiguration) => {
         try {
-          const validation = await emailService.validateSmtpConfig(config);
+          const validation = await validateSmtpConfig(config);
           return {
             id: config.id,
             host: config.host,
@@ -129,7 +131,7 @@ router.post('/validate-smtp',
 
 // Get email templates
 router.get('/templates',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (_req: Request, res: Response) => {
     const templates = emailService.getTemplates();
     return res.json(createApiResponse(true, templates, undefined, 'Templates retrieved successfully'));
   })
@@ -137,7 +139,7 @@ router.get('/templates',
 
 // Get email tracking statistics
 router.get('/stats',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const { timeRange = '7d' } = req.query;
     const stats = await emailService.getTrackingStats(timeRange as '1d' | '7d' | '30d' | '90d');
     return res.json(createApiResponse(true, stats, undefined, 'Statistics retrieved successfully'));
@@ -146,7 +148,7 @@ router.get('/stats',
 
 // Get recent email activity
 router.get('/activity',
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const { limit = 50 } = req.query;
     const activity = await emailService.getRecentActivity(Number(limit));
     return res.json(createApiResponse(true, activity, undefined, 'Activity retrieved successfully'));

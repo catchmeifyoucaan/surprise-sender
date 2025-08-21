@@ -136,7 +136,7 @@ class AdvancedEmailService {
 
   // Test SMTP connection with advanced checks
   private async testConnection(config: SmtpConfiguration): Promise<any> {
-    const transporter = nodemailer.createTransporter({
+    const transporter = nodemailer.createTransport({
       host: config.host,
       port: config.port,
       secure: config.secure,
