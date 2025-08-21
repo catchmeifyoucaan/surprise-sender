@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import { AppDataSource } from '../data-source';
 import { User, UserActivity, SmtpConfiguration, EmailTracking, LandingPage } from '../entities';
 import { authenticateJWT } from '../middleware/auth';
-import { validateSmtpConfig, validateAndProcessFile } from '../utils/smtp';
+import { validateSmtpConfig, validateAndProcessFile, sortSmtpConfigs } from '../utils/smtp';
 import multer from 'multer';
 import { emailService } from '../services/emailService';
 
@@ -152,16 +152,88 @@ router.post('/smtp/validate', authenticateJWT, async (req, res) => {
   return res.json({ success: result.success, error: result.error });
 });
 
-// SMTP import
+// Scalable import with validation and sorting
 const upload = multer({ dest: '/tmp' });
-router.post('/settings/smtp/import', authenticateJWT, upload.single('file'), async (req, res) => {
+router.post('/smtp/import-configs', authenticateJWT, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'File required' });
-    const cfg: SmtpConfiguration = Object.assign(new SmtpConfiguration(), req.body || {});
-    const result = await validateAndProcessFile(req.file as any, cfg);
-    return res.json(result);
+
+    // Parse rows as potential SMTP configs: host,port,username,password,secure,name
+    // Use a lightweight CSV/TXT/Excel parser from validateAndProcessFile to get rows
+    const dummyCfg = Object.assign(new SmtpConfiguration(), { limits: { maxFileSize: 50 * 1024 * 1024 } });
+    const parsed = await validateAndProcessFile(req.file as any, dummyCfg as any);
+    if (!parsed.success) return res.status(400).json({ success: false, error: parsed.error || 'Parse failed' });
+    const rows: any[] = parsed.data || [];
+
+    // Map rows to SmtpConfiguration objects
+    const mapped: SmtpConfiguration[] = rows.map((r) => {
+      const cfg = new SmtpConfiguration();
+      cfg.name = r.name || r.host || r.username || 'SMTP';
+      cfg.providerType = (r.providerType || 'smtp') as any;
+      cfg.host = r.host;
+      cfg.port = parseInt(String(r.port || 587));
+      cfg.username = r.username;
+      (cfg as any).password = r.password; // not persisted if entity disallows, adjust entity accordingly
+      cfg.secure = String(r.secure || '').toLowerCase() === 'true' || r.port === 465;
+      cfg.webmailProvider = r.webmailProvider;
+      cfg.apiProvider = r.apiProvider;
+      (cfg as any).apiKey = r.apiKey;
+      cfg.fromEmail = r.fromEmail;
+      cfg.fromName = r.fromName;
+      cfg.isActive = true;
+      cfg.isValid = false;
+      cfg.status = 'inactive' as any;
+      return cfg;
+    }).filter(c => c.host && c.port && c.username && ((c as any).password || c.apiProvider));
+
+    // Fast concurrent validation with limited concurrency
+    const limit = Math.max(10, Math.min(100, parseInt(process.env.SMTP_VALIDATE_CONCURRENCY || '50')));
+    let idx = 0;
+    const results: Array<{ cfg: SmtpConfiguration; ok: boolean; error?: string }> = [];
+
+    const runNext = async () => {
+      const i = idx++;
+      if (i >= mapped.length) return;
+      const cfg = mapped[i];
+      const out = await validateSmtpConfig(cfg);
+      results[i] = { cfg, ok: out.success, error: out.error };
+      return runNext();
+    };
+
+    await Promise.all(Array.from({ length: Math.min(limit, mapped.length) }).map(() => runNext()));
+
+    // Split and sort
+    const valids = sortSmtpConfigs(results.filter(r => r.ok).map(r => r.cfg));
+    const invalids = results.filter(r => !r.ok).map(r => ({ cfg: r.cfg, error: r.error }));
+
+    // Persist valid ones
+    const repo = AppDataSource.getRepository(SmtpConfiguration);
+    const saved = await repo.save(valids.map(v => ({ ...v, userId: (req.user as any).id })) as any);
+
+    return res.json({
+      success: true,
+      total: mapped.length,
+      successCount: saved.length,
+      failedCount: invalids.length,
+      errors: invalids.slice(0, 1000).map(i => `${i.cfg.username}@${i.cfg.host}: ${i.error}`),
+      configurations: saved
+    });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e?.message || 'Import failed' });
+  }
+});
+
+router.post('/smtp/bulk-delete', authenticateJWT, async (req, res) => {
+  try {
+    const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (ids.length === 0) return res.status(400).json({ success: false, error: 'ids[] required' });
+    const repo = AppDataSource.getRepository(SmtpConfiguration);
+    const toDelete = await repo.findByIds(ids as any);
+    if (toDelete.length === 0) return res.json({ success: true, deleted: 0 });
+    await repo.remove(toDelete);
+    return res.json({ success: true, deleted: toDelete.length });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message || 'Bulk delete failed' });
   }
 });
 

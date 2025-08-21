@@ -17,7 +17,7 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('surpriseSenderUser');
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      (config.headers as any).Authorization = `Bearer ${token}`;
     }
     return config;
   },
@@ -53,7 +53,7 @@ export const auth = {
       localStorage.setItem('surpriseSenderUser', token);
       
       // Set default Authorization header for future requests
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      (api.defaults.headers as any).common['Authorization'] = `Bearer ${token}`;
       
       return { user, token };
     } catch (error) {
@@ -131,39 +131,52 @@ export const users = {
 };
 
 export const smtp = {
-  getConfigs: async () => {
+  // SmtpTab expected names
+  getConfigurations: async () => {
     const response = await api.get('/smtp/configs');
     return response.data;
   },
-
-  addConfig: async (config: Omit<SmtpConfiguration, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => {
+  addConfiguration: async (config: Partial<SmtpConfiguration>) => {
     const response = await api.post('/smtp/configs', config);
     return response.data;
   },
+  deleteConfiguration: async (id: string) => {
+    const response = await api.delete(`/smtp/configs/${id}`);
+    return response.data;
+  },
+  validateConfiguration: async (id: string) => {
+    const response = await api.post(`/smtp/configs/${id}/validate`);
+    return response.data;
+  },
+  importConfigurations: async (file: File, _selectedConfigIds?: string[]) => {
+    const form = new FormData();
+    form.append('file', file);
+    const response = await api.post('/smtp/import-configs', form, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
+  bulkDelete: async (ids: string[]) => {
+    const response = await api.post('/smtp/bulk-delete', { ids });
+    return response.data;
+  },
 
+  // Backward-compatible aliases
+  getConfigs: async () => smtp.getConfigurations(),
+  addConfig: async (config: Partial<SmtpConfiguration>) => smtp.addConfiguration(config),
   updateConfig: async (id: string, config: Partial<SmtpConfiguration>) => {
     const response = await api.patch(`/smtp/configs/${id}`, config);
     return response.data;
   },
-
-  deleteConfig: async (id: string) => {
-    const response = await api.delete(`/smtp/configs/${id}`);
-    return response.data;
-  },
-
+  deleteConfig: async (id: string) => smtp.deleteConfiguration(id),
   validateConfig: async (config: Partial<SmtpConfiguration>) => {
+    // if id present, validate by id; otherwise simple stateless validate endpoint
+    if ((config as any).id) {
+      return smtp.validateConfiguration((config as any).id);
+    }
     const response = await api.post('/smtp/validate', config);
     return response.data;
-  },
-
-  importConfigurations: async (formData: FormData) => {
-    const response = await api.post('/settings/smtp/import', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return response.data;
-  },
+  }
 };
 
 export const email = {
