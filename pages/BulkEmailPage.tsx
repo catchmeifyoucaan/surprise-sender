@@ -10,6 +10,8 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import { generateTextSuggestion, isAiAvailable } from '../services/geminiService';
 import { useAuth } from '../context/AuthContext';
 import { CheckCircleIcon } from '@heroicons/react/24/outline';
+import Papa from 'papaparse';
+import { email as emailApi, smtp as smtpApi } from '../services/api';
 
 const predefinedTemplates: SelectOption[] = [ 
   { value: 'newsletter_tpl', label: 'Monthly Newsletter Template' },
@@ -137,45 +139,104 @@ const BulkEmailPage: React.FC = () => {
     setIsLoadingBody(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const parseRecipients = async (): Promise<string[]> => {
+    const manual = recipientsManual
+      .split(/\n|,|\s/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    if (!recipientFile) return manual;
+    const fileParsed: string[] = await new Promise((resolve, reject) => {
+      Papa.parse(recipientFile as File, {
+        header: false,
+        skipEmptyLines: true,
+        complete: (result) => {
+          try {
+            const rows = result.data as any[];
+            const all: string[] = [];
+            rows.forEach((row) => {
+              const cells = Array.isArray(row) ? row : Object.values(row);
+              cells.forEach((cell: any) => {
+                const candidate = String(cell || '').trim();
+                if (candidate.includes('@')) all.push(candidate);
+              });
+            });
+            resolve(all);
+          } catch (e) {
+            reject(e);
+          }
+        },
+        error: (err) => reject(err)
+      });
+    });
+    return [...manual, ...fileParsed];
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSending(true);
     setFormMessage(null);
 
-    if (!campaignName || !subject || !body || (!recipientsManual && !recipientFile) || !selectedSmtp) {
-        setFormMessage("Error: Please fill all required fields including Campaign Name, Subject, Body, Recipients, and select an SMTP Configuration.");
+    try {
+      if (!campaignName || !subject || !body || (!recipientsManual && !recipientFile) || !selectedSmtp) {
+        setFormMessage('Error: Please fill all required fields including Campaign Name, Subject, Body, Recipients, and select an SMTP Configuration.');
         setIsSending(false);
         return;
-    }
+      }
 
-    const campaignDataToLog = { campaignName, recipientsManual: recipientsManual.length, recipientFile: recipientFile?.name, subject, bodyLength: body.length, selectedTemplate, scheduleDateTime, selectedSmtp };
-    console.log('Bulk Email Campaign Data:', campaignDataToLog);
-    auth.logUserActivity(`Submitted Bulk Email campaign: ${campaignName} via SMTP ID ${selectedSmtp}`);
-    
-    setTimeout(() => {
-      setIsSending(false);
-      setFormMessage(`Campaign "${campaignName}" queued for sending via SMTP ID ${selectedSmtp}.`);
-      
-      const newCampaignEntry: Campaign = {
-        id: `c${Date.now().toString().slice(-6)}`,
-        name: campaignName || 'Untitled Campaign',
-        type: 'Email',
-        status: scheduleDateTime ? 'Scheduled' : 'Queued',
-        recipients: recipientsManual.split(',').filter(r => r.trim()).length + (recipientFile ? 1000 : 0), 
-        sentDate: scheduleDateTime || new Date().toISOString(), // Conceptual, actual send is backend
-        createdDate: new Date().toISOString(),
+      const allRecipients = await parseRecipients();
+      if (allRecipients.length === 0) {
+        setFormMessage('Error: No valid recipients found.');
+        setIsSending(false);
+        return;
+      }
+
+      // Resolve selected SMTP config
+      const smtpList = await smtpApi.getConfigs();
+      const smtpConfig = (Array.isArray(smtpList) ? smtpList : smtpList.configurations)?.find((c: any) => c.id === selectedSmtp);
+      if (!smtpConfig) {
+        setFormMessage('Error: Selected SMTP was not found.');
+        setIsSending(false);
+        return;
+      }
+
+      const emails = allRecipients.map((to) => ({ to, subject, body, isHtml: true }));
+      const options = {
+        batchSize: emailSettings.batchSize,
+        delayBetweenBatches: emailSettings.delayBetweenBatches * 1000,
+        retryAttempts: emailSettings.retryAttempts,
+        retryDelay: emailSettings.retryDelay * 1000
       };
-      setCampaigns(prev => [newCampaignEntry, ...prev]);
-      // Clear form
-      setCampaignName(''); 
-      setRecipientsManual(''); 
-      setRecipientFile(null); 
-      setSubject(''); 
-      setBody(''); 
-      setSelectedTemplate(''); 
-      setScheduleDateTime('');
-      //setSelectedSmtp(auth.smtpConfigurations[0]?.id || ''); // Keep SMTP or reset as needed
-    }, 2000);
+
+      const result = await emailApi.sendBulk(emails as any, [smtpConfig] as any, options);
+      if (result?.success) {
+        setFormMessage(`Campaign "${campaignName}" queued. Total: ${result.data?.total || emails.length}, Sent: ${result.data?.sent || 0}, Failed: ${result.data?.failed || 0}`);
+        auth.logUserActivity(`Submitted Bulk Email campaign: ${campaignName} via SMTP ID ${selectedSmtp}`);
+        const newCampaignEntry: Campaign = {
+          id: `c${Date.now().toString().slice(-6)}`,
+          name: campaignName || 'Untitled Campaign',
+          type: 'Email',
+          status: scheduleDateTime ? 'Scheduled' : 'Queued',
+          recipients: allRecipients.length,
+          sentDate: scheduleDateTime || new Date().toISOString(),
+          createdDate: new Date().toISOString(),
+        };
+        setCampaigns(prev => [newCampaignEntry, ...prev]);
+        // Clear form
+        setCampaignName('');
+        setRecipientsManual('');
+        setRecipientFile(null);
+        setSubject('');
+        setBody('');
+        setSelectedTemplate('');
+        setScheduleDateTime('');
+      } else {
+        setFormMessage(result?.error || 'Bulk send failed');
+      }
+    } catch (err: any) {
+      setFormMessage(`Error: ${err?.message || 'Bulk send failed'}`);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const checkDeliverability = useCallback(async () => {

@@ -172,6 +172,11 @@ export const email = {
     return response.data;
   },
 
+  sendBulk: async (emails: EmailData[], smtpConfigs: SmtpConfiguration[], options?: any) => {
+    const response = await api.post('/email/send-bulk', { emails, smtpConfigs, options });
+    return response.data;
+  },
+
   getDrafts: async () => {
     const response = await api.get('/emails/drafts');
     return response.data;
