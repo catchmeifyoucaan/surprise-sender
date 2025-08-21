@@ -1,8 +1,12 @@
 import axios from 'axios';
 import { User, UserActivity, SmtpConfiguration, EmailData, TelegramConfig } from '../types';
 
+const resolvedBaseUrl = (typeof window !== 'undefined' && window.location && window.location.origin)
+  ? `${window.location.origin}/api`
+  : (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001/api';
+
 const api = axios.create({
-  baseURL: 'http://localhost:3001/api',
+  baseURL: resolvedBaseUrl,
   headers: {
     'Content-Type': 'application/json'
   }
