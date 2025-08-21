@@ -4,7 +4,9 @@ import jwt from 'jsonwebtoken';
 import { AppDataSource } from '../data-source';
 import { User, UserActivity, SmtpConfiguration, EmailTracking } from '../entities';
 import { authenticateJWT } from '../middleware/auth';
-import { validateSmtpConfig } from '../utils/smtp';
+import { validateSmtpConfig, validateAndProcessFile } from '../utils/smtp';
+import multer from 'multer';
+import { emailService } from '../services/emailService';
 
 const router = Router();
 
@@ -127,12 +129,31 @@ router.post('/smtp/validate', authenticateJWT, async (req, res) => {
   return res.json({ success: result.success, error: result.error });
 });
 
+// SMTP import
+const upload = multer({ dest: '/tmp' });
+router.post('/settings/smtp/import', authenticateJWT, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, error: 'File required' });
+    const cfg: SmtpConfiguration = Object.assign(new SmtpConfiguration(), req.body || {});
+    const result = await validateAndProcessFile(req.file as any, cfg);
+    return res.json(result);
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message || 'Import failed' });
+  }
+});
+
 // Email send (record tracking)
 router.post('/send-email', authenticateJWT, async (req, res) => {
-  const repo = AppDataSource.getRepository(EmailTracking);
-  const t = repo.create({ email: req.body?.to, subject: req.body?.subject, status: 'delivered', details: 'Queued', smtpConfigId: 'n/a' });
-  const saved = await repo.save(t);
-  return res.json({ success: true, messageId: saved.id });
+  try {
+    const smtpRepo = AppDataSource.getRepository(SmtpConfiguration);
+    const configs = await smtpRepo.find({ where: { isActive: true } as any });
+    const primary = configs[0];
+    if (!primary) return res.status(400).json({ success: false, error: 'No SMTP configured' });
+    const result = await emailService.sendEmail(req.body, primary);
+    return res.json(result);
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message || 'Send failed' });
+  }
 });
 
 // Email drafts (no persistence)
@@ -147,7 +168,14 @@ router.get('/tracking/stats', authenticateJWT, async (_req, res) => {
   const total = await repo.count();
   const delivered = await repo.count({ where: { status: 'delivered' } as any });
   const failed = await repo.count({ where: { status: 'failed' } as any });
-  return res.json({ success: true, total, delivered, failed, successRate: total ? Math.round((delivered/total)*100) : 0 });
+  const hourly = await repo.find();
+  return res.json({
+    total,
+    delivered,
+    failed,
+    successRate: total ? Math.round((delivered/total)*100) : 0,
+    hourly: hourly.slice(-24).map(t => ({ time: t.timestamp, status: t.status }))
+  });
 });
 
 // Telegram config (ephemeral)
