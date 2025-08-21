@@ -169,7 +169,7 @@ const ComposePage: React.FC = () => {
           <div className="flex items-center space-x-4">
             <Button
               variant="secondary"
-              onClick={() => window.location.href = '/templates'}
+              onClick={() => (location.pathname !== '/templates' ? (window.history.pushState({}, '', '/templates'), window.dispatchEvent(new PopStateEvent('popstate'))) : null)}
             >
               <DocumentTextIcon className="w-5 h-5 mr-2" />
               Manage Templates

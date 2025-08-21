@@ -234,6 +234,51 @@ router.delete('/landing-pages/:id', authenticateJWT, async (req, res) => {
   return res.json({ success: true });
 });
 
+// Dashboard endpoints
+router.get('/dashboard/stats', authenticateJWT, async (req, res) => {
+  try {
+    const range = (req.query.timeRange as string) || '7d';
+    const now = new Date();
+    const offsets: any = { '24h': 24, '7d': 24 * 7, '30d': 24 * 30, '90d': 24 * 90 };
+    const hours = offsets[range] ?? 24 * 7;
+    const start = new Date(now.getTime() - hours * 60 * 60 * 1000);
+
+    const trackingRepo = AppDataSource.getRepository(EmailTracking);
+    const items = await trackingRepo.find();
+    const inRange = items.filter(i => new Date(i.timestamp) >= start);
+    const sent = inRange.filter(i => i.status === 'delivered').length;
+    const failed = inRange.filter(i => i.status === 'failed').length;
+    const total = inRange.length;
+    const successRate = total ? Math.round((sent / total) * 100) : 0;
+
+    return res.json({
+      emails: { total, sent, failed, pending: Math.max(0, total - sent - failed), successRate },
+      sms: { total: 0, sent: 0, failed: 0, pending: 0, successRate: 0 },
+      html: { total: 0, sent: 0, failed: 0, pending: 0, successRate: 0 }
+    });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || 'Failed to get dashboard stats' });
+  }
+});
+
+router.get('/dashboard/activity', authenticateJWT, async (_req, res) => {
+  try {
+    const trackingRepo = AppDataSource.getRepository(EmailTracking);
+    const items = await trackingRepo.find({ order: { timestamp: 'DESC' }, take: 20 });
+    const activity = items.map(i => ({
+      id: i.id,
+      type: 'email',
+      status: (i.status as any) || 'success',
+      recipient: i.email,
+      timestamp: i.timestamp,
+      details: `${i.subject} (${i.details?.slice(0, 60) || ''})`
+    }));
+    return res.json(activity);
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || 'Failed to get dashboard activity' });
+  }
+});
+
 // Basic Bulk SMS endpoint (stub implementation)
 router.post('/sms/send-bulk', authenticateJWT, async (req, res) => {
   try {

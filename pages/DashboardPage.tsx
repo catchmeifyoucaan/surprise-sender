@@ -58,9 +58,11 @@ const DashboardPage: React.FC = () => {
   const fetchDashboardData = async () => {
     setIsLoading(true);
     try {
+      const token = localStorage.getItem('surpriseSenderUser');
+      const headers = token ? { Authorization: `Bearer ${token}` } as any : {};
       const [statsResponse, activityResponse] = await Promise.all([
-        fetch(`/api/dashboard/stats?timeRange=${timeRange}`),
-        fetch(`/api/dashboard/activity?timeRange=${timeRange}`)
+        fetch(`/api/dashboard/stats?timeRange=${timeRange}`, { headers }),
+        fetch(`/api/dashboard/activity?timeRange=${timeRange}`, { headers })
       ]);
 
       if (!statsResponse.ok || !activityResponse.ok) {
@@ -151,10 +153,10 @@ const DashboardPage: React.FC = () => {
             color="bg-green-500/20"
           />
           <StatCard
-            title="Active Users"
-            value={42}
+            title="Active (Sent/Total)"
+            value={deliveryStats.emails.total}
             icon={<UserGroupIcon className="w-6 h-6 text-purple-400" />}
-            trend={8}
+            trend={0}
             color="bg-purple-500/20"
           />
           <StatCard

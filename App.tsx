@@ -18,6 +18,7 @@ import EmailPage from './pages/EmailPage';
 import UserManagementPage from './pages/UserManagementPage';
 import AdvancedAdminDashboard from './pages/AdvancedAdminDashboard';
 import AdvancedSmtpManager from './pages/AdvancedSmtpManager';
+import TemplatesPage from './pages/TemplatesPage';
 import { useAuth } from './context/AuthContext';
 import LoadingSpinner from './components/common/LoadingSpinner';
 
@@ -73,6 +74,7 @@ const App: React.FC = () => {
           <Route path="/admin-users" element={<AdminUsersPage />} />
           <Route path="/admin-dashboard" element={<AdvancedAdminDashboard />} />
           <Route path="/smtp-manager" element={<AdvancedSmtpManager />} />
+          <Route path="/templates" element={<TemplatesPage />} />
         </Route>
         
         {/* Fallback Route Handling */}
