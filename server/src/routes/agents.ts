@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { validateRequest, asyncHandler, createApiResponse } from '../middleware/validation';
 import type { ValidatedRequest } from '../middleware/validation';
-import { AgentSchema } from '../../validation/schemas';
+import { AgentSchema } from '../validation/schemas';
 import { agentService } from '../services/agentService';
 import { authenticateJWT } from '../middleware/auth';
 import { AppDataSource } from '../data-source';

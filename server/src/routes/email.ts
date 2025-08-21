@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import type { ValidatedRequest } from '../middleware/validation';
 import { validateRequest, asyncHandler, createApiResponse } from '../middleware/validation';
-import { SendEmailSchema, SmtpValidationSchema } from '../../validation/schemas';
+import { SendEmailSchema, SmtpValidationSchema } from '../validation/schemas';
 import { emailService } from '../services/emailService';
 import { authenticateJWT } from '../middleware/auth';
 import { AppDataSource } from '../data-source';
