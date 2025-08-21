@@ -21,7 +21,7 @@ app.use(
 );
 
 // Body parser
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '50mb', strict: false }));
 
 // API routes
 app.use('/api/email', emailRoutes);

@@ -68,8 +68,13 @@ router.get('/users/activities', authenticateJWT, async (_req, res) => {
 
 router.post('/users/activities', authenticateJWT, async (req, res) => {
   const repo = AppDataSource.getRepository(UserActivity);
-  const body = req.body || {};
-  const description = typeof body === 'string' ? body : (body.description || 'Activity');
+  let body: any = req.body;
+  try {
+    if (typeof body === 'string') body = JSON.parse(body);
+  } catch {
+    // if parsing fails, keep as string
+  }
+  const description = typeof body === 'string' ? body : (body?.description || 'Activity');
   const act = repo.create({ description, metadata: body?.metadata || {}, user: req.user! });
   const saved = await repo.save(act);
   return res.json(saved);
