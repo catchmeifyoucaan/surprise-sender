@@ -11,8 +11,9 @@ const router = Router();
 // Auth
 router.post('/auth/register', async (req, res) => {
   try {
-    const { name, email, password, company } = req.body || {};
-    if (!name || !email || !password) {
+    const { name, fullName, email, password, company } = req.body || {};
+    const resolvedName = name || fullName;
+    if (!resolvedName || !email || !password) {
       return res.status(400).json({ success: false, error: 'Name, email, and password are required' });
     }
     const userRepo = AppDataSource.getRepository(User);
@@ -21,7 +22,7 @@ router.post('/auth/register', async (req, res) => {
       return res.status(400).json({ success: false, error: 'User already exists' });
     }
     const hashed = await bcrypt.hash(password, 12);
-    const user = userRepo.create({ name, email, password: hashed, company, role: 'user', status: 'active' });
+    const user = userRepo.create({ name: resolvedName, email, password: hashed, company, role: 'user', status: 'active' });
     const saved = await userRepo.save(user);
     const token = jwt.sign({ id: saved.id, email: saved.email }, process.env.JWT_SECRET || 'your-secret-key', { expiresIn: '24h' });
     return res.status(201).json({ success: true, token, user: { id: saved.id, name: saved.name, email: saved.email, role: saved.role, company: saved.company } });
@@ -56,20 +57,22 @@ router.post('/auth/disable-2fa', (_req, res) => res.json({ success: true }));
 
 // Users (protected)
 router.get('/users/profile', authenticateJWT, async (req, res) => {
-  return res.json({ success: true, user: req.user });
+  return res.json(req.user);
 });
 
 router.get('/users/activities', authenticateJWT, async (_req, res) => {
   const repo = AppDataSource.getRepository(UserActivity);
   const list = await repo.find({ order: { timestamp: 'DESC' }, take: 100 });
-  return res.json({ success: true, activities: list });
+  return res.json(list);
 });
 
 router.post('/users/activities', authenticateJWT, async (req, res) => {
   const repo = AppDataSource.getRepository(UserActivity);
-  const act = repo.create({ description: req.body?.description || 'Activity', metadata: req.body?.metadata || {}, user: req.user! });
+  const body = req.body || {};
+  const description = typeof body === 'string' ? body : (body.description || 'Activity');
+  const act = repo.create({ description, metadata: body?.metadata || {}, user: req.user! });
   const saved = await repo.save(act);
-  return res.json({ success: true, activity: saved });
+  return res.json(saved);
 });
 
 router.post('/users/change-password', authenticateJWT, async (req, res) => {
@@ -87,14 +90,14 @@ router.post('/users/change-password', authenticateJWT, async (req, res) => {
 router.get('/smtp/configs', authenticateJWT, async (_req, res) => {
   const repo = AppDataSource.getRepository(SmtpConfiguration);
   const configs = await repo.find({ order: { createdAt: 'DESC' } });
-  return res.json({ success: true, configurations: configs });
+  return res.json(configs);
 });
 
 router.post('/smtp/configs', authenticateJWT, async (req, res) => {
   const repo = AppDataSource.getRepository(SmtpConfiguration);
   const cfg = repo.create({ ...req.body, userId: req.user!.id, isActive: true, isValid: false, status: 'inactive' });
   const saved = await repo.save(cfg);
-  return res.status(201).json({ success: true, configuration: saved });
+  return res.status(201).json(saved);
 });
 
 router.patch('/smtp/configs/:id', authenticateJWT, async (req, res) => {
