@@ -16,6 +16,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { generateTextSuggestion, isAiAvailable } from '../services/geminiService';
 import { email as emailApi, smtp as smtpApi } from '../services/api';
+import { SMTPSelector, SmtpSelectorValue } from '../components/common/SMTPSelector';
 
 interface EmailTemplate {
   id: string;
@@ -43,8 +44,7 @@ const ComposePage: React.FC = () => {
   const [attachments, setAttachments] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [useAllSmtps, setUseAllSmtps] = useState(false);
-  const [selectedSmtpIds, setSelectedSmtpIds] = useState<string[]>([]);
+  const [smtpSelection, setSmtpSelection] = useState<SmtpSelectorValue>({ mode: 'single', selectedIds: [] });
 
   useEffect(() => {
     if (auth.user) {
@@ -151,7 +151,7 @@ const ComposePage: React.FC = () => {
       return;
     }
 
-    const smtpIdsToUse = useAllSmtps ? auth.smtpConfigurations.filter(s => s.isValid).map(cfg => cfg.id) : selectedSmtpIds;
+    const smtpIdsToUse = smtpSelection.mode === 'all' ? auth.smtpConfigurations.filter(s => s.isValid).map(cfg => cfg.id) : smtpSelection.selectedIds;
     if (smtpIdsToUse.length === 0) {
       toast.error('Select at least one SMTP');
       return;
@@ -188,6 +188,8 @@ const ComposePage: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  const smtpItems = auth.smtpConfigurations.filter(s => s.isValid).map(s => ({ id: s.id, host: (s as any).host, port: (s as any).port, username: (s as any).user, label: (s as any).label, isValid: s.isValid }));
 
   return (
     <div className="min-h-screen bg-background p-6">
@@ -357,23 +359,7 @@ const ComposePage: React.FC = () => {
               </div>
 
               {/* SMTP Selection */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-text-secondary mb-2">SMTP Configurations</label>
-                <div className="flex items-center space-x-2 mb-2">
-                  <input type="checkbox" id="useAllSmtps" checked={useAllSmtps} onChange={() => { setUseAllSmtps(!useAllSmtps); if (!useAllSmtps) setSelectedSmtpIds([]); }} className="rounded border-slate-700 text-accent focus:ring-accent" />
-                  <label htmlFor="useAllSmtps" className="text-sm text-text-secondary">Use All SMTP Configurations</label>
-                </div>
-                {!useAllSmtps && (
-                  <div className="max-h-40 overflow-y-auto space-y-1">
-                    {auth.smtpConfigurations.filter(s => s.isValid).map(smtp => (
-                      <div key={smtp.id} className="flex items-center space-x-2">
-                        <input type="checkbox" id={smtp.id} checked={selectedSmtpIds.includes(smtp.id)} onChange={() => setSelectedSmtpIds(prev => prev.includes(smtp.id) ? prev.filter(id => id !== smtp.id) : [...prev, smtp.id])} className="rounded border-slate-700 text-accent focus:ring-accent" />
-                        <label htmlFor={smtp.id} className="text-sm text-text-secondary">{smtp.label || `${smtp.host}:${smtp.port} (${smtp.user})`}</label>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <SMTPSelector items={smtpItems} value={smtpSelection} onChange={setSmtpSelection} label="SMTP Configurations" />
 
               {/* Send Button */}
               <div className="flex justify-end">
