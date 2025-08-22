@@ -8,6 +8,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
 import Papa from 'papaparse';
 import { email as emailApi, smtp as smtpApi } from '../services/api';
+import { SMTPSelector, SmtpSelectorValue } from '../components/common/SMTPSelector';
 
 const HtmlBulkSenderPage: React.FC = () => {
   const auth = useAuth();
@@ -16,12 +17,11 @@ const HtmlBulkSenderPage: React.FC = () => {
   const [htmlBody, setHtmlBody] = useState('<h1>Your HTML Email Title</h1>');
   const [recipientsManual, setRecipientsManual] = useState('');
   const [recipientFile, setRecipientFile] = useState<File | null>(null);
-  const [useAllSmtps, setUseAllSmtps] = useState(false);
-  const [selectedSmtpIds, setSelectedSmtpIds] = useState<string[]>([]);
+  const [smtpSelection, setSmtpSelection] = useState<SmtpSelectorValue>({ mode: 'single', selectedIds: [] });
   const [isSending, setIsSending] = useState(false);
   const [formMessage, setFormMessage] = useState<string | null>(null);
 
-  const smtpOptions = auth.smtpConfigurations.filter(s => s.isValid).map(s => ({ value: s.id, label: s.label || `${s.host}:${s.port} (${s.user})` }));
+  const smtpItems = auth.smtpConfigurations.filter(s => s.isValid).map(s => ({ id: s.id, host: (s as any).host, port: (s as any).port, username: (s as any).user, label: (s as any).label, isValid: s.isValid }));
 
   const handleFileSelect = useCallback((file: File | null | string) => {
     if (typeof file === 'string') return;
@@ -66,7 +66,7 @@ const HtmlBulkSenderPage: React.FC = () => {
     setIsSending(true);
     setFormMessage(null);
     try {
-      const smtpIdsToUse = useAllSmtps ? auth.smtpConfigurations.map(cfg => cfg.id) : selectedSmtpIds;
+      const smtpIdsToUse = smtpSelection.mode === 'all' ? auth.smtpConfigurations.filter(cfg => cfg.isValid).map(cfg => cfg.id) : smtpSelection.selectedIds;
       if (!campaignName || !subject || !htmlBody || (!recipientsManual && !recipientFile) || smtpIdsToUse.length === 0) {
         setFormMessage('Error: Please fill all required fields including Campaign Name, Subject, HTML Body, Recipients, and select at least one SMTP.');
         setIsSending(false);
@@ -99,7 +99,7 @@ const HtmlBulkSenderPage: React.FC = () => {
         setHtmlBody('<p>Start new email...</p>');
         setRecipientsManual('');
         setRecipientFile(null);
-        setSelectedSmtpIds([]);
+        setSmtpSelection({ mode: 'single', selectedIds: [] });
       } else {
         setFormMessage(result?.error || 'Bulk HTML send failed');
       }
@@ -139,23 +139,7 @@ const HtmlBulkSenderPage: React.FC = () => {
           <Textarea id="htmlBody" name="htmlBody" value={htmlBody} onChange={(e) => setHtmlBody(e.target.value)} rows={12} required className="font-mono text-sm bg-slate-800/50" />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-text-primary mb-1">SMTP Configurations</label>
-          <div className="flex items-center space-x-2 mb-2">
-            <input type="checkbox" id="useAllSmtps" checked={useAllSmtps} onChange={() => { setUseAllSmtps(!useAllSmtps); if (!useAllSmtps) setSelectedSmtpIds([]); }} className="rounded border-slate-700 text-accent focus:ring-accent" />
-            <label htmlFor="useAllSmtps" className="text-sm text-text-secondary">Use All SMTP Configurations</label>
-          </div>
-          {!useAllSmtps && (
-            <div className="max-h-40 overflow-y-auto space-y-1">
-              {auth.smtpConfigurations.filter(s => s.isValid).map(smtp => (
-                <div key={smtp.id} className="flex items-center space-x-2">
-                  <input type="checkbox" id={smtp.id} checked={selectedSmtpIds.includes(smtp.id)} onChange={() => setSelectedSmtpIds(prev => prev.includes(smtp.id) ? prev.filter(id => id !== smtp.id) : [...prev, smtp.id])} className="rounded border-slate-700 text-accent focus:ring-accent" />
-                  <label htmlFor={smtp.id} className="text-sm text-text-secondary">{smtp.label || `${smtp.host}:${smtp.port} (${smtp.user})`}</label>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <SMTPSelector items={smtpItems} value={smtpSelection} onChange={setSmtpSelection} label="SMTP Configurations" />
 
         <div className="flex justify-end pt-4 border-t border-slate-700">
           <Button type="submit" variant="primary" isLoading={isSending} className="bg-accent hover:bg-accent-light">
