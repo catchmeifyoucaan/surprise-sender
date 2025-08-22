@@ -30,6 +30,8 @@ const BulkEmailPage: React.FC = () => {
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [scheduleDateTime, setScheduleDateTime] = useState('');
   const [selectedSmtp, setSelectedSmtp] = useState<string>(auth.smtpConfigurations[0]?.id || '');
+  const [useAllSmtps, setUseAllSmtps] = useState(false);
+  const [selectedSmtpIds, setSelectedSmtpIds] = useState<string[]>([]);
 
   const [isLoadingSubject, setIsLoadingSubject] = useState(false);
   const [isLoadingBody, setIsLoadingBody] = useState(false);
@@ -177,8 +179,9 @@ const BulkEmailPage: React.FC = () => {
     setFormMessage(null);
 
     try {
-      if (!campaignName || !subject || !body || (!recipientsManual && !recipientFile) || !selectedSmtp) {
-        setFormMessage('Error: Please fill all required fields including Campaign Name, Subject, Body, Recipients, and select an SMTP Configuration.');
+      const smtpIdsToUse = useAllSmtps ? auth.smtpConfigurations.filter(s => s.isValid).map(cfg => cfg.id) : (selectedSmtpIds.length ? selectedSmtpIds : (selectedSmtp ? [selectedSmtp] : []));
+      if (!campaignName || !subject || !body || (!recipientsManual && !recipientFile) || smtpIdsToUse.length === 0) {
+        setFormMessage('Error: Please fill all required fields including Campaign Name, Subject, Body, Recipients, and select at least one SMTP Configuration.');
         setIsSending(false);
         return;
       }
@@ -190,11 +193,12 @@ const BulkEmailPage: React.FC = () => {
         return;
       }
 
-      // Resolve selected SMTP config
+      // Resolve selected SMTP configs
       const smtpList = await smtpApi.getConfigs();
-      const smtpConfig = (Array.isArray(smtpList) ? smtpList : smtpList.configurations)?.find((c: any) => c.id === selectedSmtp);
-      if (!smtpConfig) {
-        setFormMessage('Error: Selected SMTP was not found.');
+      const configsArray = (Array.isArray(smtpList) ? smtpList : smtpList.configurations) || [];
+      const smtpConfigs = configsArray.filter((c: any) => smtpIdsToUse.includes(c.id));
+      if (smtpConfigs.length === 0) {
+        setFormMessage('Error: Selected SMTP config(s) not found.');
         setIsSending(false);
         return;
       }
@@ -207,10 +211,10 @@ const BulkEmailPage: React.FC = () => {
         retryDelay: emailSettings.retryDelay * 1000
       };
 
-      const result = await emailApi.sendBulk(emails as any, [smtpConfig] as any, options);
+      const result = await emailApi.sendBulk(emails as any, smtpConfigs as any, options);
       if (result?.success) {
         setFormMessage(`Campaign "${campaignName}" queued. Total: ${result.data?.total || emails.length}, Sent: ${result.data?.sent || 0}, Failed: ${result.data?.failed || 0}`);
-        auth.logUserActivity(`Submitted Bulk Email campaign: ${campaignName} via SMTP ID ${selectedSmtp}`);
+        auth.logUserActivity(`Submitted Bulk Email campaign: ${campaignName} via ${smtpConfigs.length} SMTP(s)`);
         const newCampaignEntry: Campaign = {
           id: `c${Date.now().toString().slice(-6)}`,
           name: campaignName || 'Untitled Campaign',
@@ -406,6 +410,23 @@ const BulkEmailPage: React.FC = () => {
                 className="bg-slate-800/50"
               />
               <p className="text-xs text-text-secondary mt-1">Select from globally configured SMTPs. Add more in Settings.</p>
+              <div className="mt-3">
+                <label className="block text-sm font-medium text-text-primary mb-1">Or select multiple SMTPs</label>
+                <div className="flex items-center space-x-2 mb-2">
+                  <input type="checkbox" id="useAllSmtps" checked={useAllSmtps} onChange={() => { setUseAllSmtps(!useAllSmtps); if (!useAllSmtps) setSelectedSmtpIds([]); }} className="rounded border-slate-700 text-accent focus:ring-accent" />
+                  <label htmlFor="useAllSmtps" className="text-sm text-text-secondary">Use All SMTP Configurations</label>
+                </div>
+                {!useAllSmtps && (
+                  <div className="max-h-40 overflow-y-auto space-y-1">
+                    {auth.smtpConfigurations.filter(s => s.isValid).map(smtp => (
+                      <div key={smtp.id} className="flex items-center space-x-2">
+                        <input type="checkbox" id={smtp.id} checked={selectedSmtpIds.includes(smtp.id)} onChange={() => setSelectedSmtpIds(prev => prev.includes(smtp.id) ? prev.filter(id => id !== smtp.id) : [...prev, smtp.id])} className="rounded border-slate-700 text-accent focus:ring-accent" />
+                        <label htmlFor={smtp.id} className="text-sm text-text-secondary">{smtp.label || `${smtp.host}:${smtp.port} (${smtp.user})`}</label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="space-y-6 border-t border-slate-700 pt-6">

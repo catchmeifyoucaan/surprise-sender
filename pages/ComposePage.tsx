@@ -15,6 +15,7 @@ import {
   UserGroupIcon
 } from '@heroicons/react/24/outline';
 import { generateTextSuggestion, isAiAvailable } from '../services/geminiService';
+import { email as emailApi, smtp as smtpApi } from '../services/api';
 
 interface EmailTemplate {
   id: string;
@@ -41,6 +42,9 @@ const ComposePage: React.FC = () => {
   const [scheduledTime, setScheduledTime] = useState<string>('');
   const [attachments, setAttachments] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [useAllSmtps, setUseAllSmtps] = useState(false);
+  const [selectedSmtpIds, setSelectedSmtpIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (auth.user) {
@@ -118,6 +122,21 @@ const ComposePage: React.FC = () => {
     }
   };
 
+  const filesToBase64Attachments = async (files: File[]) => {
+    const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string).split(',')[1] || '');
+      reader.onerror = (e) => reject(e);
+      reader.readAsDataURL(file);
+    });
+    const out = [] as any[];
+    for (const f of files) {
+      const b64 = await toBase64(f);
+      out.push({ name: f.name, type: f.type, content: b64 });
+    }
+    return out;
+  };
+
   const handleSend = async () => {
     if (!recipients.length) {
       toast.error('Please add at least one recipient');
@@ -132,28 +151,37 @@ const ComposePage: React.FC = () => {
       return;
     }
 
+    const smtpIdsToUse = useAllSmtps ? auth.smtpConfigurations.filter(s => s.isValid).map(cfg => cfg.id) : selectedSmtpIds;
+    if (smtpIdsToUse.length === 0) {
+      toast.error('Select at least one SMTP');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const formData = new FormData();
-      formData.append('subject', subject);
-      formData.append('body', body);
-      formData.append('recipients', JSON.stringify(recipients));
-      formData.append('scheduledTime', scheduledTime);
-      attachments.forEach(file => formData.append('attachments', file));
+      // Resolve selected SMTP configs
+      const smtpList = await smtpApi.getConfigs();
+      const configsArray = (Array.isArray(smtpList) ? smtpList : smtpList.configurations) || [];
+      const smtpConfigs = configsArray.filter((c: any) => smtpIdsToUse.includes(c.id));
+      if (smtpConfigs.length === 0) {
+        toast.error('Selected SMTP config(s) not found');
+        setIsLoading(false);
+        return;
+      }
 
-      const response = await fetch('/api/email/send', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.ok) throw new Error('Failed to send email');
-
-      toast.success('Email sent successfully');
-      setSubject('');
-      setBody('');
-      setRecipients([]);
-      setAttachments([]);
-      setScheduledTime('');
+      const attachmentsPayload = await filesToBase64Attachments(attachments);
+      const emails = recipients.map((r) => ({ to: r.email, subject, body, isHtml: true, attachments: attachmentsPayload }));
+      const result = await emailApi.sendBulk(emails as any, smtpConfigs as any, {});
+      if (result?.success) {
+        toast.success('Email(s) queued');
+        setSubject('');
+        setBody('');
+        setRecipients([]);
+        setAttachments([]);
+        setSelectedTemplate('');
+      } else {
+        toast.error(result?.error || 'Send failed');
+      }
     } catch (error) {
       toast.error('Failed to send email');
     } finally {
@@ -326,6 +354,25 @@ const ComposePage: React.FC = () => {
                   value={scheduledTime}
                   onChange={(e) => setScheduledTime(e.target.value)}
                 />
+              </div>
+
+              {/* SMTP Selection */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-text-secondary mb-2">SMTP Configurations</label>
+                <div className="flex items-center space-x-2 mb-2">
+                  <input type="checkbox" id="useAllSmtps" checked={useAllSmtps} onChange={() => { setUseAllSmtps(!useAllSmtps); if (!useAllSmtps) setSelectedSmtpIds([]); }} className="rounded border-slate-700 text-accent focus:ring-accent" />
+                  <label htmlFor="useAllSmtps" className="text-sm text-text-secondary">Use All SMTP Configurations</label>
+                </div>
+                {!useAllSmtps && (
+                  <div className="max-h-40 overflow-y-auto space-y-1">
+                    {auth.smtpConfigurations.filter(s => s.isValid).map(smtp => (
+                      <div key={smtp.id} className="flex items-center space-x-2">
+                        <input type="checkbox" id={smtp.id} checked={selectedSmtpIds.includes(smtp.id)} onChange={() => setSelectedSmtpIds(prev => prev.includes(smtp.id) ? prev.filter(id => id !== smtp.id) : [...prev, smtp.id])} className="rounded border-slate-700 text-accent focus:ring-accent" />
+                        <label htmlFor={smtp.id} className="text-sm text-text-secondary">{smtp.label || `${smtp.host}:${smtp.port} (${smtp.user})`}</label>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Send Button */}
