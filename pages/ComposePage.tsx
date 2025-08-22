@@ -45,13 +45,25 @@ const ComposePage: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [smtpSelection, setSmtpSelection] = useState<SmtpSelectorValue>({ mode: 'single', selectedIds: [] });
+  const [smtpList, setSmtpList] = useState<any[]>([]);
 
   useEffect(() => {
     if (auth.user) {
       auth.logUserActivity('Viewed Compose Page.');
       fetchTemplates();
+      loadSmtps();
     }
   }, [auth]);
+
+  const loadSmtps = async () => {
+    try {
+      const list = await smtpApi.getConfigs();
+      const arr = Array.isArray(list) ? list : list.configurations;
+      setSmtpList(arr || []);
+    } catch {
+      // ignore
+    }
+  };
 
   const fetchTemplates = async () => {
     try {
@@ -151,7 +163,8 @@ const ComposePage: React.FC = () => {
       return;
     }
 
-    const smtpIdsToUse = smtpSelection.mode === 'all' ? auth.smtpConfigurations.filter(s => s.isValid).map(cfg => cfg.id) : smtpSelection.selectedIds;
+    const validSmtps = (smtpList || []).filter((s: any) => s.isValid);
+    const smtpIdsToUse = smtpSelection.mode === 'all' ? validSmtps.map((cfg: any) => cfg.id) : smtpSelection.selectedIds;
     if (smtpIdsToUse.length === 0) {
       toast.error('Select at least one SMTP');
       return;
@@ -160,9 +173,7 @@ const ComposePage: React.FC = () => {
     setIsLoading(true);
     try {
       // Resolve selected SMTP configs
-      const smtpList = await smtpApi.getConfigs();
-      const configsArray = (Array.isArray(smtpList) ? smtpList : smtpList.configurations) || [];
-      const smtpConfigs = configsArray.filter((c: any) => smtpIdsToUse.includes(c.id));
+      const smtpConfigs = validSmtps.filter((c: any) => smtpIdsToUse.includes(c.id));
       if (smtpConfigs.length === 0) {
         toast.error('Selected SMTP config(s) not found');
         setIsLoading(false);
@@ -189,7 +200,7 @@ const ComposePage: React.FC = () => {
     }
   };
 
-  const smtpItems = auth.smtpConfigurations.filter(s => s.isValid).map(s => ({ id: s.id, host: (s as any).host, port: (s as any).port, username: (s as any).user, label: (s as any).label, isValid: s.isValid }));
+  const smtpItems = (smtpList || []).filter((s: any) => s.isValid).map((s: any) => ({ id: s.id, host: s.host, port: s.port, username: s.username, label: s.label, isValid: s.isValid }));
 
   return (
     <div className="min-h-screen bg-background p-6">
