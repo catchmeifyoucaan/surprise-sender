@@ -46,6 +46,7 @@ const AdvancedSmtpManager: React.FC = () => {
   const [mixedFile, setMixedFile] = useState<File | null>(null);
   const [mixedResult, setMixedResult] = useState<any | null>(null);
   const [mixUploading, setMixUploading] = useState(false);
+  const [showMixedDetails, setShowMixedDetails] = useState(false);
 
   useEffect(() => {
     if (auth.user) {
@@ -135,7 +136,6 @@ const AdvancedSmtpManager: React.FC = () => {
           await smtpApi.validateConfiguration(id);
           setConfigs(prev => prev.map(c => c.id === id ? { ...c, isValid: true, lastValidated: new Date().toISOString() } : c));
         } catch {
-          // keep going on error
         } finally {
           setValidateProgress(prev => ({ done: prev.done + 1, total: prev.total }));
         }
@@ -219,17 +219,72 @@ const AdvancedSmtpManager: React.FC = () => {
               >
                 {mixUploading ? 'Processing...' : 'Upload Mixed'}
               </button>
+              {mixedResult && (
+                <button
+                  onClick={() => setShowMixedDetails(v => !v)}
+                  className="px-3 py-2 rounded border text-gray-700"
+                >
+                  {showMixedDetails ? 'Hide Details' : 'Show Details'}
+                </button>
+              )}
             </div>
           </div>
           {mixedResult && (
-            <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-              <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">SMTP</div><div className="font-semibold">{mixedResult?.stats?.smtp} (valid {mixedResult?.stats?.smtpValid}, invalid {mixedResult?.stats?.smtpInvalid})</div></div>
-              <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Webmail</div><div className="font-semibold">{mixedResult?.stats?.webmail}</div></div>
-              <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">cPanel</div><div className="font-semibold">{mixedResult?.stats?.cpanel}</div></div>
-              <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">phpMyAdmin</div><div className="font-semibold">{mixedResult?.stats?.phpmyadmin}</div></div>
-              <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Email:Pass</div><div className="font-semibold">{mixedResult?.stats?.emailPairs}</div></div>
-              <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Emails</div><div className="font-semibold">{mixedResult?.stats?.emails}</div></div>
-              <div className="p-3 bg-gray-50 rounded border col-span-full"><div className="text-gray-500">Unknown</div><div className="font-semibold">{mixedResult?.stats?.unknown}</div></div>
+            <div className="mt-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">SMTP</div><div className="font-semibold">{mixedResult?.stats?.smtp} (valid {mixedResult?.stats?.smtpValid}, invalid {mixedResult?.stats?.smtpInvalid})</div></div>
+                <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Webmail</div><div className="font-semibold">{mixedResult?.stats?.webmail} (valid {mixedResult?.stats?.webmailValid || 0}, invalid {mixedResult?.stats?.webmailInvalid || 0})</div></div>
+                <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">cPanel</div><div className="font-semibold">{mixedResult?.stats?.cpanel} (valid {mixedResult?.stats?.cpanelValid || 0}, invalid {mixedResult?.stats?.cpanelInvalid || 0})</div></div>
+                <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">phpMyAdmin</div><div className="font-semibold">{mixedResult?.stats?.phpmyadmin} (valid {mixedResult?.stats?.phpmyadminValid || 0}, invalid {mixedResult?.stats?.phpmyadminInvalid || 0})</div></div>
+                <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Email:Pass</div><div className="font-semibold">{mixedResult?.stats?.emailPairs} (domains valid {mixedResult?.stats?.emailPairsValid || 0}, invalid {mixedResult?.stats?.emailPairsInvalid || 0})</div></div>
+                <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Emails</div><div className="font-semibold">{mixedResult?.stats?.emails} (domains valid {mixedResult?.stats?.emailsValid || 0}, invalid {mixedResult?.stats?.emailsInvalid || 0})</div></div>
+                <div className="p-3 bg-gray-50 rounded border col-span-full"><div className="text-gray-500">Unknown</div><div className="font-semibold">{mixedResult?.stats?.unknown}</div></div>
+              </div>
+
+              {showMixedDetails && (
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-3 border rounded">
+                    <div className="font-semibold mb-2">Invalid SMTP (first 20)</div>
+                    <ul className="text-sm list-disc list-inside max-h-48 overflow-y-auto">
+                      {(mixedResult?.categories?.smtp?.invalid || []).slice(0, 20).map((it: any, idx: number) => (
+                        <li key={idx}>{it.cfg?.username}@{it.cfg?.host}: {it.error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="p-3 border rounded">
+                    <div className="font-semibold mb-2">Invalid Webmail (first 20)</div>
+                    <ul className="text-sm list-disc list-inside max-h-48 overflow-y-auto">
+                      {(mixedResult?.categories?.webmailValidated?.invalid || []).slice(0, 20).map((it: any, idx: number) => (
+                        <li key={idx}>{it.item?.url}: {it.error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="p-3 border rounded">
+                    <div className="font-semibold mb-2">Invalid cPanel (first 20)</div>
+                    <ul className="text-sm list-disc list-inside max-h-48 overflow-y-auto">
+                      {(mixedResult?.categories?.cpanelValidated?.invalid || []).slice(0, 20).map((it: any, idx: number) => (
+                        <li key={idx}>{it.item?.url}: {it.error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="p-3 border rounded">
+                    <div className="font-semibold mb-2">Invalid phpMyAdmin (first 20)</div>
+                    <ul className="text-sm list-disc list-inside max-h-48 overflow-y-auto">
+                      {(mixedResult?.categories?.phpmyadminValidated?.invalid || []).slice(0, 20).map((it: any, idx: number) => (
+                        <li key={idx}>{it.item?.url}: {it.error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="p-3 border rounded">
+                    <div className="font-semibold mb-2">Invalid Email Domains (first 20)</div>
+                    <ul className="text-sm list-disc list-inside max-h-48 overflow-y-auto">
+                      {(mixedResult?.categories?.emailsValidated?.invalid || []).slice(0, 20).map((it: any, idx: number) => (
+                        <li key={idx}>{it.email}: {it.error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

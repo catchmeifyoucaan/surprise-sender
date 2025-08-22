@@ -7,6 +7,7 @@ import { authenticateJWT } from '../middleware/auth';
 import { validateSmtpConfig, validateAndProcessFile, sortSmtpConfigs } from '../utils/smtp';
 import multer from 'multer';
 import { emailService } from '../services/emailService';
+import { promises as dns } from 'dns';
 
 const router = Router();
 
@@ -493,6 +494,20 @@ router.post('/ingest/import', authenticateJWT, multer({ dest: '/tmp' }).single('
       acc.unknown.push(line);
     }
 
+    // Helper: fetch with timeout (Node 18 global fetch)
+    const fetchWithTimeout = async (url: string, ms: number): Promise<{ ok: boolean; status?: number; error?: string }> => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), ms);
+      try {
+        const res: any = await (globalThis as any).fetch(url, { method: 'GET', redirect: 'follow', signal: controller.signal });
+        return { ok: res.ok || (res.status && res.status < 500), status: res.status };
+      } catch (e: any) {
+        return { ok: false, error: e?.message || 'request failed' };
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
     // Validate SMTP concurrently
     const limit = Math.max(10, Math.min(100, parseInt(process.env.SMTP_VALIDATE_CONCURRENCY || '50')));
     const smtpResults: Array<{ cfg: SmtpConfiguration; ok: boolean; error?: string }> = [];
@@ -526,8 +541,71 @@ router.post('/ingest/import', authenticateJWT, multer({ dest: '/tmp' }).single('
       }
     }
 
+    // Validate URL-based categories concurrently (reachability)
+    const httpLimit = 25;
+    const validateUrlList = async (items: Array<{ url: string }>) => {
+      const results: Array<{ item: any; ok: boolean; error?: string }> = [];
+      let idx = 0;
+      const runNext = async (): Promise<void> => {
+        const i = idx++;
+        if (i >= items.length) return;
+        const item = items[i];
+        const out = await fetchWithTimeout(item.url, 8000);
+        results[i] = { item, ok: out.ok, error: out.error || (out.ok ? undefined : `HTTP ${out.status || ''}`.trim()) };
+        return runNext();
+      };
+      await Promise.all(Array.from({ length: Math.min(httpLimit, items.length) }).map(() => runNext()));
+      return results;
+    };
+
+    const [webmailResults, cpanelResults, phpmyadminResults] = await Promise.all([
+      validateUrlList(acc.webmail),
+      validateUrlList(acc.cpanel),
+      validateUrlList(acc.phpmyadmin)
+    ]);
+
+    // Validate email domains via MX lookup
+    const validateEmailDomains = async (emails: string[]) => {
+      const results: Array<{ value: string; ok: boolean; error?: string }> = [];
+      let idx = 0;
+      const runNext = async (): Promise<void> => {
+        const i = idx++;
+        if (i >= emails.length) return;
+        const value = emails[i];
+        try {
+          const domain = value.split('@')[1];
+          if (!domain) throw new Error('invalid domain');
+          const mx = await dns.resolveMx(domain);
+          results[i] = { value, ok: Array.isArray(mx) && mx.length > 0 };
+        } catch (e: any) {
+          results[i] = { value, ok: false, error: e?.message || 'mx lookup failed' };
+        }
+        return runNext();
+      };
+      await Promise.all(Array.from({ length: Math.min(50, emails.length) }).map(() => runNext()));
+      return results;
+    };
+
+    const emailPairsEmails = acc.emailPairs.map(e => e.email);
+    const [emailPairsDomainResults, emailsDomainResults] = await Promise.all([
+      validateEmailDomains(emailPairsEmails),
+      validateEmailDomains(acc.emails)
+    ]);
+
     const smtpValid = smtpResults.filter(r => r.ok).map(r => r.cfg);
     const smtpInvalid = smtpResults.filter(r => !r.ok).map(r => ({ cfg: r.cfg, error: r.error }));
+
+    const webmailValid = webmailResults.filter(r => r.ok).map(r => r.item);
+    const webmailInvalid = webmailResults.filter(r => !r.ok).map(r => ({ item: r.item, error: r.error }));
+    const cpanelValid = cpanelResults.filter(r => r.ok).map(r => r.item);
+    const cpanelInvalid = cpanelResults.filter(r => !r.ok).map(r => ({ item: r.item, error: r.error }));
+    const phpmyadminValid = phpmyadminResults.filter(r => r.ok).map(r => r.item);
+    const phpmyadminInvalid = phpmyadminResults.filter(r => !r.ok).map(r => ({ item: r.item, error: r.error }));
+
+    const emailPairsValid = emailPairsDomainResults.filter(r => r.ok).map(r => ({ email: r.value }));
+    const emailPairsInvalid = emailPairsDomainResults.filter(r => !r.ok).map(r => ({ email: r.value, error: r.error }));
+    const emailsValid = emailsDomainResults.filter(r => r.ok).map(r => r.value);
+    const emailsInvalid = emailsDomainResults.filter(r => !r.ok).map(r => ({ email: r.value, error: r.error }));
 
     return res.json({
       success: true,
@@ -536,19 +614,34 @@ router.post('/ingest/import', authenticateJWT, multer({ dest: '/tmp' }).single('
         smtpValid: smtpValid.length,
         smtpInvalid: smtpInvalid.length,
         webmail: acc.webmail.length,
+        webmailValid: webmailValid.length,
+        webmailInvalid: webmailInvalid.length,
         cpanel: acc.cpanel.length,
+        cpanelValid: cpanelValid.length,
+        cpanelInvalid: cpanelInvalid.length,
         phpmyadmin: acc.phpmyadmin.length,
+        phpmyadminValid: phpmyadminValid.length,
+        phpmyadminInvalid: phpmyadminInvalid.length,
         emailPairs: acc.emailPairs.length,
+        emailPairsValid: emailPairsValid.length,
+        emailPairsInvalid: emailPairsInvalid.length,
         emails: acc.emails.length,
+        emailsValid: emailsValid.length,
+        emailsInvalid: emailsInvalid.length,
         unknown: acc.unknown.length
       },
       categories: {
         smtp: { valid: smtpValid, invalid: smtpInvalid.slice(0, 1000) },
         webmail: acc.webmail.slice(0, 1000),
+        webmailValidated: { valid: webmailValid.slice(0, 1000), invalid: webmailInvalid.slice(0, 1000) },
         cpanel: acc.cpanel.slice(0, 1000),
+        cpanelValidated: { valid: cpanelValid.slice(0, 1000), invalid: cpanelInvalid.slice(0, 1000) },
         phpmyadmin: acc.phpmyadmin.slice(0, 1000),
+        phpmyadminValidated: { valid: phpmyadminValid.slice(0, 1000), invalid: phpmyadminInvalid.slice(0, 1000) },
         emailPairs: acc.emailPairs.slice(0, 1000),
+        emailPairsValidated: { valid: emailPairsValid.slice(0, 1000), invalid: emailPairsInvalid.slice(0, 1000) },
         emails: acc.emails.slice(0, 5000),
+        emailsValidated: { valid: emailsValid.slice(0, 5000), invalid: emailsInvalid.slice(0, 1000) },
         unknown: acc.unknown.slice(0, 1000)
       }
     });
