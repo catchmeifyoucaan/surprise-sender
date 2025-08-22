@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { AppDataSource } from '../data-source';
-import { User, UserActivity, SmtpConfiguration, EmailTracking, LandingPage } from '../entities';
+import { User, UserActivity, SmtpConfiguration, EmailTracking, LandingPage, WebmailCredential, CpanelCredential, PhpMyAdminCredential, EmailAccount, EmailAddress } from '../entities';
 import { authenticateJWT } from '../middleware/auth';
 import { validateSmtpConfig, validateAndProcessFile, sortSmtpConfigs } from '../utils/smtp';
 import multer from 'multer';
@@ -437,6 +437,7 @@ router.post('/ingest/import', authenticateJWT, multer({ dest: '/tmp' }).single('
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'File required' });
     const persistSmtp = String(req.query.persistSmtp || 'true').toLowerCase() !== 'false';
+    const persistMixed = String(req.query.persistMixed || 'true').toLowerCase() !== 'false';
     const raw = (await (await import('fs')).promises.readFile(req.file.path, 'utf-8'));
     const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('========'));
 
@@ -762,6 +763,29 @@ router.post('/ingest/import', authenticateJWT, multer({ dest: '/tmp' }).single('
     const emailPairsDeepValid = emailPairsDeep.filter((r: any) => r?.ok).length;
     const emailPairsDeepInvalid = emailPairsDeep.length - emailPairsDeepValid;
 
+    // Persist mixed valid if requested
+    if (persistMixed) {
+      const webmailRepo = AppDataSource.getRepository(WebmailCredential);
+      const cpanelRepo = AppDataSource.getRepository(CpanelCredential);
+      const pmaRepo = AppDataSource.getRepository(PhpMyAdminCredential);
+      const emailAccRepo = AppDataSource.getRepository(EmailAccount);
+      const emailAddrRepo = AppDataSource.getRepository(EmailAddress);
+
+      const saveUserId = (req.user as any).id;
+
+      const webmailDeepValidItems = acc.webmail.filter((_, i) => (webmailDeep[i] as any)?.ok).map((it) => ({ ...it, userId: saveUserId, isValid: true }));
+      const cpanelDeepValidItems = acc.cpanel.filter((_, i) => (cpanelDeep[i] as any)?.ok).map((it) => ({ ...it, userId: saveUserId, isValid: true }));
+      const pmaDeepValidItems = acc.phpmyadmin.filter((_, i) => (phpmyadminDeep[i] as any)?.ok).map((it) => ({ ...it, userId: saveUserId, isValid: true }));
+      const emailAccDeepValidItems = acc.emailPairs.map((it, i) => ({ email: it.email, password: it.password, authHost: (emailPairsDeep[i] as any)?.host, userId: saveUserId, isValid: !!(emailPairsDeep[i] as any)?.ok })).filter(it => it.isValid);
+      const emailAddrValidItems = emailsValid.map((e: string) => ({ email: e, userId: saveUserId }));
+
+      if (webmailDeepValidItems.length) await webmailRepo.save(webmailDeepValidItems as any);
+      if (cpanelDeepValidItems.length) await cpanelRepo.save(cpanelDeepValidItems as any);
+      if (pmaDeepValidItems.length) await pmaRepo.save(pmaDeepValidItems as any);
+      if (emailAccDeepValidItems.length) await emailAccRepo.save(emailAccDeepValidItems as any);
+      if (emailAddrValidItems.length) await emailAddrRepo.save(emailAddrValidItems as any);
+    }
+
     return res.json({
       success: true,
       stats: {
@@ -826,6 +850,110 @@ router.post('/ingest/import', authenticateJWT, multer({ dest: '/tmp' }).single('
     });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e?.message || 'Ingest failed' });
+  }
+});
+
+// Bulk delete invalid SMTPs by ids
+router.post('/smtp/bulk-delete', authenticateJWT, async (req, res) => {
+  try {
+    const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (ids.length === 0) return res.status(400).json({ success: false, error: 'ids[] required' });
+    const repo = AppDataSource.getRepository(SmtpConfiguration);
+    const toDelete = await repo.findByIds(ids as any);
+    if (toDelete.length === 0) return res.json({ success: true, deleted: 0 });
+    await repo.remove(toDelete);
+    return res.json({ success: true, deleted: toDelete.length });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message || 'Bulk delete failed' });
+  }
+});
+
+// Bulk delete mixed by type
+router.post('/mixed/bulk-delete', authenticateJWT, async (req, res) => {
+  try {
+    const { type, ids } = req.body || {};
+    if (!Array.isArray(ids) || !type) return res.status(400).json({ success: false, error: 'type and ids[] required' });
+    const map: any = {
+      webmail: AppDataSource.getRepository(WebmailCredential),
+      cpanel: AppDataSource.getRepository(CpanelCredential),
+      phpmyadmin: AppDataSource.getRepository(PhpMyAdminCredential),
+      emailAccounts: AppDataSource.getRepository(EmailAccount),
+      emails: AppDataSource.getRepository(EmailAddress)
+    };
+    const repo = map[type];
+    if (!repo) return res.status(400).json({ success: false, error: 'invalid type' });
+    const toDelete = await repo.findByIds(ids as any);
+    if (toDelete.length === 0) return res.json({ success: true, deleted: 0 });
+    await repo.remove(toDelete);
+    return res.json({ success: true, deleted: toDelete.length });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message || 'Mixed bulk delete failed' });
+  }
+});
+
+// List mixed credentials for current user
+router.get('/mixed/webmail', authenticateJWT, async (req, res) => {
+  const repo = AppDataSource.getRepository(WebmailCredential);
+  const list = await repo.find({ where: { user: { id: req.user!.id } } as any, order: { createdAt: 'DESC' } });
+  return res.json(list);
+});
+router.get('/mixed/cpanel', authenticateJWT, async (req, res) => {
+  const repo = AppDataSource.getRepository(CpanelCredential);
+  const list = await repo.find({ where: { user: { id: req.user!.id } } as any, order: { createdAt: 'DESC' } });
+  return res.json(list);
+});
+router.get('/mixed/phpmyadmin', authenticateJWT, async (req, res) => {
+  const repo = AppDataSource.getRepository(PhpMyAdminCredential);
+  const list = await repo.find({ where: { user: { id: req.user!.id } } as any, order: { createdAt: 'DESC' } });
+  return res.json(list);
+});
+router.get('/mixed/email-accounts', authenticateJWT, async (req, res) => {
+  const repo = AppDataSource.getRepository(EmailAccount);
+  const list = await repo.find({ where: { user: { id: req.user!.id } } as any, order: { createdAt: 'DESC' } });
+  return res.json(list);
+});
+router.get('/mixed/emails', authenticateJWT, async (req, res) => {
+  const repo = AppDataSource.getRepository(EmailAddress);
+  const list = await repo.find({ where: { user: { id: req.user!.id } } as any, order: { createdAt: 'DESC' } });
+  return res.json(list);
+});
+
+// Promote EmailAccount to SMTP configurations
+router.post('/mixed/promote/email-accounts', authenticateJWT, async (req, res) => {
+  try {
+    const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (ids.length === 0) return res.status(400).json({ success: false, error: 'ids[] required' });
+    const emailAccRepo = AppDataSource.getRepository(EmailAccount);
+    const smtpRepo = AppDataSource.getRepository(SmtpConfiguration);
+    const accounts = await emailAccRepo.findByIds(ids as any);
+    if (accounts.length === 0) return res.json({ success: true, created: 0 });
+
+    const created: SmtpConfiguration[] = [] as any;
+    for (const acc of accounts) {
+      const email = acc.email;
+      const domain = email.split('@')[1];
+      let host = acc.authHost?.split(':')[0] || (domain ? `smtp.${domain}` : '');
+      let port = parseInt(acc.authHost?.split(':')[1] || '587', 10);
+      if (!host) continue;
+      const secure = port === 465;
+      const cfg = new SmtpConfiguration();
+      cfg.userId = req.user!.id as any;
+      cfg.name = `${email}`;
+      cfg.providerType = 'smtp';
+      cfg.host = host as any;
+      cfg.port = port as any;
+      cfg.username = email as any;
+      cfg.password = acc.password as any;
+      cfg.secure = secure as any;
+      cfg.isActive = true as any;
+      cfg.isValid = false as any;
+      cfg.status = 'inactive' as any;
+      const savedOne = await smtpRepo.save(cfg as any);
+      created.push(savedOne as any);
+    }
+    return res.json({ success: true, created: created.length, configurations: created });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message || 'Promote failed' });
   }
 });
 

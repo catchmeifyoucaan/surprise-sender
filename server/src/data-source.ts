@@ -1,6 +1,7 @@
 import { DataSource } from 'typeorm';
 import { User, SmtpConfiguration, EmailTracking, UserActivity, EmailTemplate, Campaign, Agent, UserPreferencesEntity } from './entities';
 import { ApiKeyEntity } from './entities/ApiKeyEntity';
+import { WebmailCredential, CpanelCredential, PhpMyAdminCredential, EmailAccount, EmailAddress } from './entities/WebCredentials';
 
 const isProduction = process.env.NODE_ENV === 'production';
 const hasDatabaseUrl = !!process.env.DATABASE_URL;
@@ -16,7 +17,12 @@ const baseOptions = {
     Campaign,
     Agent,
     UserPreferencesEntity,
-    ApiKeyEntity
+    ApiKeyEntity,
+    WebmailCredential,
+    CpanelCredential,
+    PhpMyAdminCredential,
+    EmailAccount,
+    EmailAddress
   ],
   migrations: isProduction ? ['dist/migrations/*.js'] : [],
   subscribers: []
@@ -33,7 +39,7 @@ const postgresOptions = hasDatabaseUrl
   ? {
     type: 'postgres' as const,
     url: process.env.DATABASE_URL,
-    synchronize: false,
+    synchronize: true,
     logging: false,
     ssl: { rejectUnauthorized: false },
     extra: { ssl: { rejectUnauthorized: false } }
@@ -45,7 +51,7 @@ const postgresOptions = hasDatabaseUrl
     username: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
-    synchronize: false,
+    synchronize: true,
     logging: false,
     ssl: { rejectUnauthorized: false },
     extra: { ssl: { rejectUnauthorized: false } }

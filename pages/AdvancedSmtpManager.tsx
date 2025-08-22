@@ -26,6 +26,14 @@ interface SmtpConfig {
   lastError?: string;
 }
 
+type MixedLists = {
+  webmail: any[];
+  cpanel: any[];
+  phpmyadmin: any[];
+  emailAccounts: any[];
+  emails: any[];
+};
+
 const concurrencyLimit = 10;
 
 const AdvancedSmtpManager: React.FC = () => {
@@ -48,9 +56,14 @@ const AdvancedSmtpManager: React.FC = () => {
   const [mixUploading, setMixUploading] = useState(false);
   const [showMixedDetails, setShowMixedDetails] = useState(false);
 
+  const [mixedLists, setMixedLists] = useState<MixedLists>({ webmail: [], cpanel: [], phpmyadmin: [], emailAccounts: [], emails: [] });
+  const [mixedSelected, setMixedSelected] = useState<{ [key: string]: Set<string> }>({ webmail: new Set(), cpanel: new Set(), phpmyadmin: new Set(), emailAccounts: new Set(), emails: new Set() });
+  const [mixedLoading, setMixedLoading] = useState(false);
+
   useEffect(() => {
     if (auth.user) {
       loadConfigs();
+      loadMixed();
     }
   }, [auth.user]);
 
@@ -63,6 +76,19 @@ const AdvancedSmtpManager: React.FC = () => {
       toast.error('Failed to load SMTP configurations');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMixed = async () => {
+    setMixedLoading(true);
+    try {
+      const { mixed } = await import('../services/api');
+      const lists = await mixed.list();
+      setMixedLists(lists);
+    } catch (e) {
+      // ignore silently
+    } finally {
+      setMixedLoading(false);
     }
   };
 
@@ -95,7 +121,7 @@ const AdvancedSmtpManager: React.FC = () => {
     setIsUploading(true);
     setUploadSummary(null);
     try {
-      const res = await smtpApi.importConfigurations(file);
+      const res = await smtpApi.importConfigurations(file, undefined, { persistSmtp: true });
       setUploadSummary({
         total: res.total ?? 0,
         successCount: res.successCount ?? 0,
@@ -161,6 +187,45 @@ const AdvancedSmtpManager: React.FC = () => {
     }
   };
 
+  const toggleMixedSelect = (type: keyof MixedLists, id: string) => {
+    setMixedSelected(prev => {
+      const copy = { ...prev, [type]: new Set(prev[type]) } as any;
+      if (copy[type].has(id)) copy[type].delete(id); else copy[type].add(id);
+      return copy;
+    });
+  };
+
+  const deleteMixedSelected = async (type: keyof MixedLists) => {
+    const ids = Array.from(mixedSelected[type] || []);
+    if (ids.length === 0) { toast.error('Select at least one'); return; }
+    if (!window.confirm(`Delete ${ids.length} item(s)?`)) return;
+    try {
+      const { mixed } = await import('../services/api');
+      const mapKey = type === 'emailAccounts' ? 'emailAccounts' : (type as any);
+      await mixed.bulkDelete(mapKey, ids);
+      toast.success('Deleted');
+      setMixedSelected(prev => ({ ...prev, [type]: new Set() }));
+      await loadMixed();
+    } catch (e: any) {
+      toast.error(e?.message || 'Delete failed');
+    }
+  };
+
+  const promoteEmailAccounts = async () => {
+    const ids = Array.from(mixedSelected.emailAccounts || []);
+    if (ids.length === 0) { toast.error('Select at least one email account'); return; }
+    try {
+      const { mixed } = await import('../services/api');
+      const res = await mixed.promoteEmailAccounts(ids);
+      toast.success(`Promoted ${res.created || 0} to SMTP`);
+      setMixedSelected(prev => ({ ...prev, emailAccounts: new Set() }));
+      await loadConfigs();
+      await loadMixed();
+    } catch (e: any) {
+      toast.error(e?.message || 'Promote failed');
+    }
+  };
+
   if (auth.user?.role !== 'admin') {
     return (
       <div className="flex items-center justify-center h-64">
@@ -203,10 +268,11 @@ const AdvancedSmtpManager: React.FC = () => {
                   setMixUploading(true);
                   try {
                     const { ingest } = await import('../services/api');
-                    const res = await ingest.importMixed(mixedFile);
+                    const res = await ingest.importMixed(mixedFile, { persistMixed: true, persistSmtp: true });
                     setMixedResult(res);
                     toast.success('Mixed file processed');
                     await loadConfigs();
+                    await loadMixed();
                   } catch (e: any) {
                     toast.error(e?.message || 'Mixed upload failed');
                   } finally {
@@ -233,10 +299,10 @@ const AdvancedSmtpManager: React.FC = () => {
             <div className="mt-4">
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                 <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">SMTP</div><div className="font-semibold">{mixedResult?.stats?.smtp} (valid {mixedResult?.stats?.smtpValid}, invalid {mixedResult?.stats?.smtpInvalid})</div></div>
-                <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Webmail</div><div className="font-semibold">{mixedResult?.stats?.webmail} (valid {mixedResult?.stats?.webmailValid || 0}, invalid {mixedResult?.stats?.webmailInvalid || 0})</div></div>
-                <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">cPanel</div><div className="font-semibold">{mixedResult?.stats?.cpanel} (valid {mixedResult?.stats?.cpanelValid || 0}, invalid {mixedResult?.stats?.cpanelInvalid || 0})</div></div>
-                <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">phpMyAdmin</div><div className="font-semibold">{mixedResult?.stats?.phpmyadmin} (valid {mixedResult?.stats?.phpmyadminValid || 0}, invalid {mixedResult?.stats?.phpmyadminInvalid || 0})</div></div>
-                <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Email:Pass</div><div className="font-semibold">{mixedResult?.stats?.emailPairs} (domains valid {mixedResult?.stats?.emailPairsValid || 0}, invalid {mixedResult?.stats?.emailPairsInvalid || 0})</div></div>
+                <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Webmail</div><div className="font-semibold">{mixedResult?.stats?.webmail} (valid {mixedResult?.stats?.webmailValid || 0}, invalid {mixedResult?.stats?.webmailInvalid || 0}, deep {mixedResult?.stats?.webmailDeepValid || 0}/{mixedResult?.stats?.webmailDeepInvalid || 0})</div></div>
+                <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">cPanel</div><div className="font-semibold">{mixedResult?.stats?.cpanel} (valid {mixedResult?.stats?.cpanelValid || 0}, invalid {mixedResult?.stats?.cpanelInvalid || 0}, deep {mixedResult?.stats?.cpanelDeepValid || 0}/{mixedResult?.stats?.cpanelDeepInvalid || 0})</div></div>
+                <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">phpMyAdmin</div><div className="font-semibold">{mixedResult?.stats?.phpmyadmin} (valid {mixedResult?.stats?.phpmyadminValid || 0}, invalid {mixedResult?.stats?.phpmyadminInvalid || 0}, deep {mixedResult?.stats?.phpmyadminDeepValid || 0}/{mixedResult?.stats?.phpmyadminDeepInvalid || 0})</div></div>
+                <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Email:Pass</div><div className="font-semibold">{mixedResult?.stats?.emailPairs} (domains valid {mixedResult?.stats?.emailPairsValid || 0}, invalid {mixedResult?.stats?.emailPairsInvalid || 0}, deep {mixedResult?.stats?.emailPairsDeepValid || 0}/{mixedResult?.stats?.emailPairsDeepInvalid || 0})</div></div>
                 <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Emails</div><div className="font-semibold">{mixedResult?.stats?.emails} (domains valid {mixedResult?.stats?.emailsValid || 0}, invalid {mixedResult?.stats?.emailsInvalid || 0})</div></div>
                 <div className="p-3 bg-gray-50 rounded border col-span-full"><div className="text-gray-500">Unknown</div><div className="font-semibold">{mixedResult?.stats?.unknown}</div></div>
               </div>
@@ -287,6 +353,189 @@ const AdvancedSmtpManager: React.FC = () => {
               )}
             </div>
           )}
+        </div>
+
+        {/* Saved Mixed Credentials */}
+        <div className="mb-6 bg-white rounded-lg shadow p-4 border border-gray-200">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">Saved Mixed Credentials</h2>
+            <button onClick={loadMixed} disabled={mixedLoading} className={`px-3 py-2 rounded border ${mixedLoading ? 'opacity-60' : ''}`}>{mixedLoading ? 'Refreshing...' : 'Refresh'}</button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Email Accounts */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-medium">Email Accounts</div>
+                <div className="space-x-2">
+                  <button onClick={promoteEmailAccounts} className="px-3 py-1.5 rounded bg-blue-600 text-white">Promote to SMTP</button>
+                  <button onClick={() => deleteMixedSelected('emailAccounts')} className="px-3 py-1.5 rounded bg-red-600 text-white">Delete Selected</button>
+                </div>
+              </div>
+              <div className="border rounded">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2"><input type="checkbox" onChange={(e) => {
+                        const all = new Set<string>(e.target.checked ? mixedLists.emailAccounts.map((x: any) => x.id) : []);
+                        setMixedSelected(prev => ({ ...prev, emailAccounts: all }));
+                      }} checked={mixedLists.emailAccounts.length>0 && mixedSelected.emailAccounts.size === mixedLists.emailAccounts.length} /></th>
+                      <th className="px-3 py-2 text-left">Email</th>
+                      <th className="px-3 py-2 text-left">Valid</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mixedLists.emailAccounts.length === 0 ? (
+                      <tr><td className="px-3 py-3 text-gray-500" colSpan={3}>No saved email accounts.</td></tr>
+                    ) : mixedLists.emailAccounts.map((it: any) => (
+                      <tr key={it.id} className="border-t">
+                        <td className="px-3 py-2"><input type="checkbox" checked={mixedSelected.emailAccounts.has(it.id)} onChange={() => toggleMixedSelect('emailAccounts', it.id)} /></td>
+                        <td className="px-3 py-2">{it.email}</td>
+                        <td className="px-3 py-2">{it.isValid ? 'Yes' : 'No'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Webmail */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-medium">Webmail</div>
+                <div className="space-x-2">
+                  <button onClick={() => deleteMixedSelected('webmail')} className="px-3 py-1.5 rounded bg-red-600 text-white">Delete Selected</button>
+                </div>
+              </div>
+              <div className="border rounded">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2"><input type="checkbox" onChange={(e) => {
+                        const all = new Set<string>(e.target.checked ? mixedLists.webmail.map((x: any) => x.id) : []);
+                        setMixedSelected(prev => ({ ...prev, webmail: all }));
+                      }} checked={mixedLists.webmail.length>0 && mixedSelected.webmail.size === mixedLists.webmail.length} /></th>
+                      <th className="px-3 py-2 text-left">URL</th>
+                      <th className="px-3 py-2 text-left">User</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mixedLists.webmail.length === 0 ? (
+                      <tr><td className="px-3 py-3 text-gray-500" colSpan={3}>No saved webmail creds.</td></tr>
+                    ) : mixedLists.webmail.map((it: any) => (
+                      <tr key={it.id} className="border-t">
+                        <td className="px-3 py-2"><input type="checkbox" checked={mixedSelected.webmail.has(it.id)} onChange={() => toggleMixedSelect('webmail', it.id)} /></td>
+                        <td className="px-3 py-2">{it.url}</td>
+                        <td className="px-3 py-2">{it.username}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* cPanel */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-medium">cPanel</div>
+                <div className="space-x-2">
+                  <button onClick={() => deleteMixedSelected('cpanel')} className="px-3 py-1.5 rounded bg-red-600 text-white">Delete Selected</button>
+                </div>
+              </div>
+              <div className="border rounded">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2"><input type="checkbox" onChange={(e) => {
+                        const all = new Set<string>(e.target.checked ? mixedLists.cpanel.map((x: any) => x.id) : []);
+                        setMixedSelected(prev => ({ ...prev, cpanel: all }));
+                      }} checked={mixedLists.cpanel.length>0 && mixedSelected.cpanel.size === mixedLists.cpanel.length} /></th>
+                      <th className="px-3 py-2 text-left">URL</th>
+                      <th className="px-3 py-2 text-left">User</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mixedLists.cpanel.length === 0 ? (
+                      <tr><td className="px-3 py-3 text-gray-500" colSpan={3}>No saved cPanel creds.</td></tr>
+                    ) : mixedLists.cpanel.map((it: any) => (
+                      <tr key={it.id} className="border-t">
+                        <td className="px-3 py-2"><input type="checkbox" checked={mixedSelected.cpanel.has(it.id)} onChange={() => toggleMixedSelect('cpanel', it.id)} /></td>
+                        <td className="px-3 py-2">{it.url}</td>
+                        <td className="px-3 py-2">{it.username}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* phpMyAdmin */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-medium">phpMyAdmin</div>
+                <div className="space-x-2">
+                  <button onClick={() => deleteMixedSelected('phpmyadmin')} className="px-3 py-1.5 rounded bg-red-600 text-white">Delete Selected</button>
+                </div>
+              </div>
+              <div className="border rounded">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2"><input type="checkbox" onChange={(e) => {
+                        const all = new Set<string>(e.target.checked ? mixedLists.phpmyadmin.map((x: any) => x.id) : []);
+                        setMixedSelected(prev => ({ ...prev, phpmyadmin: all }));
+                      }} checked={mixedLists.phpmyadmin.length>0 && mixedSelected.phpmyadmin.size === mixedLists.phpmyadmin.length} /></th>
+                      <th className="px-3 py-2 text-left">URL</th>
+                      <th className="px-3 py-2 text-left">User</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mixedLists.phpmyadmin.length === 0 ? (
+                      <tr><td className="px-3 py-3 text-gray-500" colSpan={3}>No saved phpMyAdmin creds.</td></tr>
+                    ) : mixedLists.phpmyadmin.map((it: any) => (
+                      <tr key={it.id} className="border-t">
+                        <td className="px-3 py-2"><input type="checkbox" checked={mixedSelected.phpmyadmin.has(it.id)} onChange={() => toggleMixedSelect('phpmyadmin', it.id)} /></td>
+                        <td className="px-3 py-2">{it.url}</td>
+                        <td className="px-3 py-2">{it.username}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Emails */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-medium">Emails</div>
+                <div className="space-x-2">
+                  <button onClick={() => deleteMixedSelected('emails')} className="px-3 py-1.5 rounded bg-red-600 text-white">Delete Selected</button>
+                </div>
+              </div>
+              <div className="border rounded">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2"><input type="checkbox" onChange={(e) => {
+                        const all = new Set<string>(e.target.checked ? mixedLists.emails.map((x: any) => x.id) : []);
+                        setMixedSelected(prev => ({ ...prev, emails: all }));
+                      }} checked={mixedLists.emails.length>0 && mixedSelected.emails.size === mixedLists.emails.length} /></th>
+                      <th className="px-3 py-2 text-left">Email</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mixedLists.emails.length === 0 ? (
+                      <tr><td className="px-3 py-3 text-gray-500" colSpan={2}>No saved emails.</td></tr>
+                    ) : mixedLists.emails.map((it: any) => (
+                      <tr key={it.id} className="border-t">
+                        <td className="px-3 py-2"><input type="checkbox" checked={mixedSelected.emails.has(it.id)} onChange={() => toggleMixedSelect('emails', it.id)} /></td>
+                        <td className="px-3 py-2">{it.email}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
 
         {uploadSummary && (

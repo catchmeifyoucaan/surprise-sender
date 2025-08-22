@@ -148,10 +148,12 @@ export const smtp = {
     const response = await api.post(`/smtp/configs/${id}/validate`);
     return response.data;
   },
-  importConfigurations: async (file: File, _selectedConfigIds?: string[]) => {
+  importConfigurations: async (file: File, _selectedConfigIds?: string[], options?: { persistSmtp?: boolean }) => {
     const form = new FormData();
     form.append('file', file);
-    const response = await api.post('/smtp/import-configs', form, {
+    const params = new URLSearchParams();
+    if (options && options.persistSmtp === false) params.set('persistSmtp', 'false');
+    const response = await api.post(`/smtp/import-configs?${params.toString()}`, form, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
     return response.data;
@@ -175,6 +177,44 @@ export const smtp = {
       return smtp.validateConfiguration((config as any).id);
     }
     const response = await api.post('/smtp/validate', config);
+    return response.data;
+  }
+};
+
+export const mixed = {
+  import: async (file: File, options?: { persistSmtp?: boolean; persistMixed?: boolean }) => {
+    const form = new FormData();
+    form.append('file', file);
+    const params = new URLSearchParams();
+    if (options && options.persistSmtp === false) params.set('persistSmtp', 'false');
+    if (options && options.persistMixed === false) params.set('persistMixed', 'false');
+    const response = await api.post(`/ingest/import?${params.toString()}`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
+  list: async () => {
+    const [webmail, cpanel, phpmyadmin, emailAccounts, emails] = await Promise.all([
+      api.get('/mixed/webmail'),
+      api.get('/mixed/cpanel'),
+      api.get('/mixed/phpmyadmin'),
+      api.get('/mixed/email-accounts'),
+      api.get('/mixed/emails')
+    ]);
+    return {
+      webmail: webmail.data,
+      cpanel: cpanel.data,
+      phpmyadmin: phpmyadmin.data,
+      emailAccounts: emailAccounts.data,
+      emails: emails.data
+    };
+  },
+  promoteEmailAccounts: async (ids: string[]) => {
+    const response = await api.post('/mixed/promote/email-accounts', { ids });
+    return response.data;
+  },
+  bulkDelete: async (type: 'webmail' | 'cpanel' | 'phpmyadmin' | 'emailAccounts' | 'emails', ids: string[]) => {
+    const response = await api.post('/mixed/bulk-delete', { type, ids });
     return response.data;
   }
 };
@@ -226,16 +266,7 @@ export const sms = {
 };
 
 export const ingest = {
-  importMixed: async (file: File, options?: { persistSmtp?: boolean }) => {
-    const form = new FormData();
-    form.append('file', file);
-    const params = new URLSearchParams();
-    if (options && options.persistSmtp === false) params.set('persistSmtp', 'false');
-    const response = await api.post(`/ingest/import?${params.toString()}`, form, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-    return response.data;
-  }
+  importMixed: async (file: File, options?: { persistSmtp?: boolean; persistMixed?: boolean }) => mixed.import(file, options)
 };
 
 export default api; 

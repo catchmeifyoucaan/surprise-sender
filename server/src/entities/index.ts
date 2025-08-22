@@ -1,9 +1,11 @@
 export { User } from './User';
+export { SmtpConfiguration } from './SmtpConfiguration';
+export { EmailTracking } from './EmailTracking';
 export { UserActivity } from './UserActivity';
 export { EmailTemplate } from './EmailTemplate';
-export { SmtpConfiguration } from './SmtpConfiguration';
 export { Campaign } from './Campaign';
 export { Agent } from './Agent';
 export { UserPreferencesEntity } from './UserPreferences';
-export { EmailTracking } from './EmailTracking'; 
+export { ApiKeyEntity } from './ApiKeyEntity';
 export { LandingPage } from './LandingPage';
+export { WebmailCredential, CpanelCredential, PhpMyAdminCredential, EmailAccount, EmailAddress } from './WebCredentials';
