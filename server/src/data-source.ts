@@ -7,6 +7,10 @@ const isProduction = process.env.NODE_ENV === 'production';
 const hasDatabaseUrl = !!process.env.DATABASE_URL;
 const hasExplicitHost = !!process.env.DB_HOST;
 
+const sqliteDbPath = isProduction
+  ? (process.env.SQLITE_PATH || '/data/database.sqlite')
+  : './data/database.sqlite';
+
 const baseOptions = {
   entities: [
     User,
@@ -30,7 +34,7 @@ const baseOptions = {
 
 const sqliteOptions = {
   type: 'sqlite' as const,
-  database: './data/database.sqlite',
+  database: sqliteDbPath,
   synchronize: true,
   logging: true
 };

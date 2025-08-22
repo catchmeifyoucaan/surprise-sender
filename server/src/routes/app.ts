@@ -106,9 +106,9 @@ router.post('/users/change-password', authenticateJWT, async (req, res) => {
 });
 
 // SMTP
-router.get('/smtp/configs', authenticateJWT, async (_req, res) => {
+router.get('/smtp/configs', authenticateJWT, async (req, res) => {
   const repo = AppDataSource.getRepository(SmtpConfiguration);
-  const configs = await repo.find({ order: { createdAt: 'DESC' } });
+  const configs = await repo.find({ where: { userId: req.user!.id } as any, order: { createdAt: 'DESC' } });
   return res.json(configs);
 });
 
@@ -955,6 +955,37 @@ router.post('/mixed/promote/email-accounts', authenticateJWT, async (req, res) =
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e?.message || 'Promote failed' });
   }
+});
+
+router.get('/smtp/export', authenticateJWT, async (req, res) => {
+  const repo = AppDataSource.getRepository(SmtpConfiguration);
+  const configs = await repo.find({ where: { userId: req.user!.id } as any, order: { createdAt: 'DESC' } });
+  const lines = ['name,host,port,username,secure,isValid,status'];
+  for (const c of configs) {
+    lines.push(`${c.name||''},${c.host||''},${c.port||''},${c.username||''},${c.secure? 'true':'false'},${c.isValid? 'true':'false'},${c.status||''}`);
+  }
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="smtp-configs.csv"');
+  return res.send(lines.join('\n'));
+});
+
+router.get('/mixed/export', authenticateJWT, async (req, res) => {
+  const type = (req.query.type as string) || 'webmail';
+  const maps: any = {
+    webmail: { repo: AppDataSource.getRepository(WebmailCredential), header: 'url,username,isValid' , line: (x: any)=> `${x.url},${x.username},${x.isValid?'true':'false'}` },
+    cpanel: { repo: AppDataSource.getRepository(CpanelCredential), header: 'url,username,isValid' , line: (x: any)=> `${x.url},${x.username},${x.isValid?'true':'false'}` },
+    phpmyadmin: { repo: AppDataSource.getRepository(PhpMyAdminCredential), header: 'url,username,isValid' , line: (x: any)=> `${x.url},${x.username},${x.isValid?'true':'false'}` },
+    emailAccounts: { repo: AppDataSource.getRepository(EmailAccount), header: 'email,isValid,authHost' , line: (x: any)=> `${x.email},${x.isValid?'true':'false'},${x.authHost||''}` },
+    emails: { repo: AppDataSource.getRepository(EmailAddress), header: 'email' , line: (x: any)=> `${x.email}` }
+  };
+  const item = maps[type];
+  if (!item) return res.status(400).json({ success: false, error: 'invalid type' });
+  const list = await item.repo.find({ where: { userId: req.user!.id } as any, order: { createdAt: 'DESC' } });
+  const lines = [item.header];
+  for (const x of list) lines.push(item.line(x));
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="${type}.csv"`);
+  return res.send(lines.join('\n'));
 });
 
 export default router;

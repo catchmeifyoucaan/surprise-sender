@@ -162,7 +162,10 @@ export const smtp = {
     const response = await api.post('/smtp/bulk-delete', { ids });
     return response.data;
   },
-
+  exportCsv: async (): Promise<Blob> => {
+    const response = await api.get('/smtp/export', { responseType: 'blob' });
+    return response.data as Blob;
+  },
   // Backward-compatible aliases
   getConfigs: async () => smtp.getConfigurations(),
   addConfig: async (config: Partial<SmtpConfiguration>) => smtp.addConfiguration(config),
@@ -216,6 +219,10 @@ export const mixed = {
   bulkDelete: async (type: 'webmail' | 'cpanel' | 'phpmyadmin' | 'emailAccounts' | 'emails', ids: string[]) => {
     const response = await api.post('/mixed/bulk-delete', { type, ids });
     return response.data;
+  },
+  exportCsv: async (type: 'webmail' | 'cpanel' | 'phpmyadmin' | 'emailAccounts' | 'emails'): Promise<Blob> => {
+    const response = await api.get(`/mixed/export?type=${encodeURIComponent(type)}`, { responseType: 'blob' });
+    return response.data as Blob;
   }
 };
 

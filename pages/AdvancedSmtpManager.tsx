@@ -241,6 +241,7 @@ const AdvancedSmtpManager: React.FC = () => {
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">SMTP Manager</h1>
           <div className="flex items-center space-x-3">
+            <button onClick={async ()=>{ try { const blob = await smtpApi.exportCsv(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download='smtp-configs.csv'; a.click(); URL.revokeObjectURL(url);} catch(e:any){ toast.error('Export failed'); } }} className="px-3 py-2 rounded border">Export SMTPs</button>
             <input type="file" accept=".csv,.txt,.xlsx" onChange={(e) => setFile(e.target.files?.[0] || null)} />
             <button onClick={handleUpload} disabled={!file || isUploading} className={`px-4 py-2 rounded text-white ${(!file || isUploading) ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'}`}>
               {isUploading ? 'Uploading...' : 'Upload SMTPs'}
@@ -300,6 +301,7 @@ const AdvancedSmtpManager: React.FC = () => {
               <div className="flex items-center justify-between mb-2">
                 <div className="font-medium">Email Accounts</div>
                 <div className="space-x-2">
+                  <button onClick={async ()=>{ try { const { mixed } = await import('../services/api'); const blob = await mixed.exportCsv('emailAccounts'); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='email-accounts.csv'; a.click(); URL.revokeObjectURL(url);} catch(e:any){ toast.error('Export failed'); } }} className="px-3 py-1.5 rounded border">Export</button>
                   <button onClick={promoteEmailAccounts} className="px-3 py-1.5 rounded bg-blue-600 text-white">Promote to SMTP</button>
                   <button onClick={() => deleteMixedSelected('emailAccounts')} className="px-3 py-1.5 rounded bg-red-600 text-white">Delete Selected</button>
                 </div>
@@ -338,6 +340,7 @@ const AdvancedSmtpManager: React.FC = () => {
               <div className="flex items-center justify-between mb-2">
                 <div className="font-medium">Webmail</div>
                 <div className="space-x-2">
+                  <button onClick={async ()=>{ try { const { mixed } = await import('../services/api'); const blob = await mixed.exportCsv('webmail'); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='webmail.csv'; a.click(); URL.revokeObjectURL(url);} catch(e:any){ toast.error('Export failed'); } }} className="px-3 py-1.5 rounded border">Export</button>
                   <button onClick={() => deleteMixedSelected('webmail')} className="px-3 py-1.5 rounded bg-red-600 text-white">Delete Selected</button>
                 </div>
               </div>
@@ -375,6 +378,7 @@ const AdvancedSmtpManager: React.FC = () => {
               <div className="flex items-center justify-between mb-2">
                 <div className="font-medium">cPanel</div>
                 <div className="space-x-2">
+                  <button onClick={async ()=>{ try { const { mixed } = await import('../services/api'); const blob = await mixed.exportCsv('cpanel'); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='cpanel.csv'; a.click(); URL.revokeObjectURL(url);} catch(e:any){ toast.error('Export failed'); } }} className="px-3 py-1.5 rounded border">Export</button>
                   <button onClick={() => deleteMixedSelected('cpanel')} className="px-3 py-1.5 rounded bg-red-600 text-white">Delete Selected</button>
                 </div>
               </div>
@@ -412,6 +416,7 @@ const AdvancedSmtpManager: React.FC = () => {
               <div className="flex items-center justify-between mb-2">
                 <div className="font-medium">phpMyAdmin</div>
                 <div className="space-x-2">
+                  <button onClick={async ()=>{ try { const { mixed } = await import('../services/api'); const blob = await mixed.exportCsv('phpmyadmin'); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='phpmyadmin.csv'; a.click(); URL.revokeObjectURL(url);} catch(e:any){ toast.error('Export failed'); } }} className="px-3 py-1.5 rounded border">Export</button>
                   <button onClick={() => deleteMixedSelected('phpmyadmin')} className="px-3 py-1.5 rounded bg-red-600 text-white">Delete Selected</button>
                 </div>
               </div>
@@ -449,6 +454,7 @@ const AdvancedSmtpManager: React.FC = () => {
               <div className="flex items-center justify-between mb-2">
                 <div className="font-medium">Emails</div>
                 <div className="space-x-2">
+                  <button onClick={async ()=>{ try { const { mixed } = await import('../services/api'); const blob = await mixed.exportCsv('emails'); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='emails.csv'; a.click(); URL.revokeObjectURL(url);} catch(e:any){ toast.error('Export failed'); } }} className="px-3 py-1.5 rounded border">Export</button>
                   <button onClick={() => deleteMixedSelected('emails')} className="px-3 py-1.5 rounded bg-red-600 text-white">Delete Selected</button>
                 </div>
               </div>
