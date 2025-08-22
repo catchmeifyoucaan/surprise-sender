@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import { AppDataSource } from './data-source';
 import emailRoutes from './routes/email';
 import agentRoutes from './routes/agents';
@@ -57,6 +58,26 @@ app.get(/^(?!\/api).*/, (_req: Request, res: Response) => {
 
 // Error handler (last)
 app.use(errorHandler);
+
+// Ensure SQLite path exists in production when no DATABASE_URL
+(function ensureSqliteDir() {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const hasDatabaseUrl = !!process.env.DATABASE_URL;
+  if (isProduction && !hasDatabaseUrl) {
+    try {
+      const dir = '/data';
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      // eslint-disable-next-line no-console
+      console.log('Using SQLite at /data/database.sqlite (persistent if mounted).');
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to ensure /data directory for SQLite:', e);
+    }
+  } else if (isProduction && hasDatabaseUrl) {
+    // eslint-disable-next-line no-console
+    console.log('Using PostgreSQL via DATABASE_URL');
+  }
+})();
 
 // Start after DB init
 AppDataSource.initialize()
