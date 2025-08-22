@@ -108,7 +108,7 @@ router.post('/users/change-password', authenticateJWT, async (req, res) => {
 // SMTP
 router.get('/smtp/configs', authenticateJWT, async (req, res) => {
   const repo = AppDataSource.getRepository(SmtpConfiguration);
-  const configs = await repo.find({ where: { userId: req.user!.id } as any, order: { createdAt: 'DESC' } });
+  const configs = await repo.find({ where: [{ userId: req.user!.id } as any, { userId: null } as any], order: { createdAt: 'DESC' } });
   return res.json(configs);
 });
 
