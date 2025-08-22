@@ -29,13 +29,29 @@ app.use('/api/agents', agentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', appRoutes);
 app.get('/api/health', (_req: Request, res: Response) => res.json({ ok: true }));
+app.get('/api/version', (_req: Request, res: Response) => {
+  const version = process.env.RENDER_GIT_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_COMMIT || process.env.COMMIT_REF || 'dev';
+  res.json({ version, ts: new Date().toISOString() });
+});
 
 // Static frontend (Vite build in root/dist). __dirname is server/dist at runtime.
 const staticRoot = path.resolve(__dirname, '../../dist');
-app.use(express.static(staticRoot));
+app.use(express.static(staticRoot, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.setHeader('Surprise-Sender', 'no-html-cache');
+    }
+  }
+}));
 
 // SPA fallback for all non-API routes
 app.get(/^(?!\/api).*/, (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(staticRoot, 'index.html'));
 });
 
