@@ -56,6 +56,9 @@ const AdvancedSmtpManager: React.FC = () => {
   const [mixUploading, setMixUploading] = useState(false);
   const [showMixedDetails, setShowMixedDetails] = useState(false);
 
+  const [persistMixed, setPersistMixed] = useState(true);
+  const [persistSmtp, setPersistSmtp] = useState(true);
+
   const [mixedLists, setMixedLists] = useState<MixedLists>({ webmail: [], cpanel: [], phpmyadmin: [], emailAccounts: [], emails: [] });
   const [mixedSelected, setMixedSelected] = useState<{ [key: string]: Set<string> }>({ webmail: new Set(), cpanel: new Set(), phpmyadmin: new Set(), emailAccounts: new Set(), emails: new Set() });
   const [mixedLoading, setMixedLoading] = useState(false);
@@ -226,6 +229,18 @@ const AdvancedSmtpManager: React.FC = () => {
     }
   };
 
+  const copyToClipboard = async (text: string) => {
+    try { await navigator.clipboard.writeText(text); toast.success('Copied'); } catch { toast.error('Copy failed'); }
+  };
+
+  const exportAsFile = (filename: string, lines: string[]) => {
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (auth.user?.role !== 'admin') {
     return (
       <div className="flex items-center justify-center h-64">
@@ -261,6 +276,8 @@ const AdvancedSmtpManager: React.FC = () => {
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Mixed Upload (SMTP/Webmail/cPanel/phpMyAdmin/Emails)</h2>
             <div className="flex items-center space-x-3">
+              <label className="flex items-center space-x-1 text-sm text-gray-600"><input type="checkbox" checked={persistSmtp} onChange={(e) => setPersistSmtp(e.target.checked)} /><span>Save valid SMTPs</span></label>
+              <label className="flex items-center space-x-1 text-sm text-gray-600"><input type="checkbox" checked={persistMixed} onChange={(e) => setPersistMixed(e.target.checked)} /><span>Save valid Mixed</span></label>
               <input type="file" accept=".txt,.csv" onChange={(e) => setMixedFile(e.target.files?.[0] || null)} />
               <button
                 onClick={async () => {
@@ -268,7 +285,7 @@ const AdvancedSmtpManager: React.FC = () => {
                   setMixUploading(true);
                   try {
                     const { ingest } = await import('../services/api');
-                    const res = await ingest.importMixed(mixedFile, { persistMixed: true, persistSmtp: true });
+                    const res = await ingest.importMixed(mixedFile, { persistMixed, persistSmtp });
                     setMixedResult(res);
                     toast.success('Mixed file processed');
                     await loadConfigs();
@@ -304,7 +321,24 @@ const AdvancedSmtpManager: React.FC = () => {
                 <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">phpMyAdmin</div><div className="font-semibold">{mixedResult?.stats?.phpmyadmin} (valid {mixedResult?.stats?.phpmyadminValid || 0}, invalid {mixedResult?.stats?.phpmyadminInvalid || 0}, deep {mixedResult?.stats?.phpmyadminDeepValid || 0}/{mixedResult?.stats?.phpmyadminDeepInvalid || 0})</div></div>
                 <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Email:Pass</div><div className="font-semibold">{mixedResult?.stats?.emailPairs} (domains valid {mixedResult?.stats?.emailPairsValid || 0}, invalid {mixedResult?.stats?.emailPairsInvalid || 0}, deep {mixedResult?.stats?.emailPairsDeepValid || 0}/{mixedResult?.stats?.emailPairsDeepInvalid || 0})</div></div>
                 <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Emails</div><div className="font-semibold">{mixedResult?.stats?.emails} (domains valid {mixedResult?.stats?.emailsValid || 0}, invalid {mixedResult?.stats?.emailsInvalid || 0})</div></div>
-                <div className="p-3 bg-gray-50 rounded border col-span-full"><div className="text-gray-500">Unknown</div><div className="font-semibold">{mixedResult?.stats?.unknown}</div></div>
+                <div className="p-3 bg-gray-50 rounded border col-span-full flex items-center gap-3">
+                  <button className="px-3 py-2 rounded border" onClick={() => exportAsFile('mixed_valid.txt', [
+                    ...((mixedResult?.categories?.smtp?.valid||[]).map((x:any)=>`${x.username}|${x.host}|${x.port}|${x.password}`)),
+                    ...((mixedResult?.categories?.webmailDeep?.valid||[]).map((x:any)=>`${x.url}|${x.username}|***`)),
+                    ...((mixedResult?.categories?.cpanelDeep?.valid||[]).map((x:any)=>`${x.url}|${x.username}|***`)),
+                    ...((mixedResult?.categories?.phpmyadminDeep?.valid||[]).map((x:any)=>`${x.url}|${x.username}|***`)),
+                    ...((mixedResult?.categories?.emailPairsDeep?.valid||[]).map((x:any)=>`${x.email}|${x.host||''}`)),
+                    ...((mixedResult?.categories?.emailsValidated?.valid||[]).map((x:any)=>`${x}`))
+                  ])}>Export Valid</button>
+                  <button className="px-3 py-2 rounded border" onClick={() => exportAsFile('mixed_invalid.txt', [
+                    ...((mixedResult?.categories?.smtp?.invalid||[]).map((x:any)=>`${x.cfg?.username}|${x.cfg?.host}|${x.error}`)),
+                    ...((mixedResult?.categories?.webmailValidated?.invalid||[]).map((x:any)=>`${x.item?.url}|${x.error}`)),
+                    ...((mixedResult?.categories?.cpanelValidated?.invalid||[]).map((x:any)=>`${x.item?.url}|${x.error}`)),
+                    ...((mixedResult?.categories?.phpmyadminValidated?.invalid||[]).map((x:any)=>`${x.item?.url}|${x.error}`)),
+                    ...((mixedResult?.categories?.emailsValidated?.invalid||[]).map((x:any)=>`${x.email}|${x.error}`))
+                  ])}>Export Invalid</button>
+                  <a href="#saved-mixed" className="px-3 py-2 rounded border">View Saved Mixed</a>
+                </div>
               </div>
 
               {showMixedDetails && (
@@ -313,7 +347,7 @@ const AdvancedSmtpManager: React.FC = () => {
                     <div className="font-semibold mb-2">Invalid SMTP (first 20)</div>
                     <ul className="text-sm list-disc list-inside max-h-48 overflow-y-auto">
                       {(mixedResult?.categories?.smtp?.invalid || []).slice(0, 20).map((it: any, idx: number) => (
-                        <li key={idx}>{it.cfg?.username}@{it.cfg?.host}: {it.error}</li>
+                        <li key={idx} className="flex items-center justify-between gap-2"><span>{it.cfg?.username}@{it.cfg?.host}: {it.error}</span><button className="text-xs underline" onClick={()=>copyToClipboard(`${it.cfg?.host}|${it.cfg?.port}|${it.cfg?.username}|${it.cfg?.password}`)}>Copy</button></li>
                       ))}
                     </ul>
                   </div>
@@ -321,7 +355,7 @@ const AdvancedSmtpManager: React.FC = () => {
                     <div className="font-semibold mb-2">Invalid Webmail (first 20)</div>
                     <ul className="text-sm list-disc list-inside max-h-48 overflow-y-auto">
                       {(mixedResult?.categories?.webmailValidated?.invalid || []).slice(0, 20).map((it: any, idx: number) => (
-                        <li key={idx}>{it.item?.url}: {it.error}</li>
+                        <li key={idx} className="flex items-center justify-between gap-2"><a href={it.item?.url} target="_blank" rel="noreferrer" className="text-blue-600 underline">{it.item?.url}</a><button className="text-xs underline" onClick={()=>copyToClipboard(`${it.item?.url}|${it.item?.username}|***`)}>Copy</button></li>
                       ))}
                     </ul>
                   </div>
@@ -329,7 +363,7 @@ const AdvancedSmtpManager: React.FC = () => {
                     <div className="font-semibold mb-2">Invalid cPanel (first 20)</div>
                     <ul className="text-sm list-disc list-inside max-h-48 overflow-y-auto">
                       {(mixedResult?.categories?.cpanelValidated?.invalid || []).slice(0, 20).map((it: any, idx: number) => (
-                        <li key={idx}>{it.item?.url}: {it.error}</li>
+                        <li key={idx} className="flex items-center justify-between gap-2"><a href={it.item?.url} target="_blank" rel="noreferrer" className="text-blue-600 underline">{it.item?.url}</a><button className="text-xs underline" onClick={()=>copyToClipboard(`${it.item?.url}|${it.item?.username}|***`)}>Copy</button></li>
                       ))}
                     </ul>
                   </div>
@@ -337,7 +371,7 @@ const AdvancedSmtpManager: React.FC = () => {
                     <div className="font-semibold mb-2">Invalid phpMyAdmin (first 20)</div>
                     <ul className="text-sm list-disc list-inside max-h-48 overflow-y-auto">
                       {(mixedResult?.categories?.phpmyadminValidated?.invalid || []).slice(0, 20).map((it: any, idx: number) => (
-                        <li key={idx}>{it.item?.url}: {it.error}</li>
+                        <li key={idx} className="flex items-center justify-between gap-2"><a href={it.item?.url} target="_blank" rel="noreferrer" className="text-blue-600 underline">{it.item?.url}</a><button className="text-xs underline" onClick={()=>copyToClipboard(`${it.item?.url}|${it.item?.username}|***`)}>Copy</button></li>
                       ))}
                     </ul>
                   </div>
@@ -345,7 +379,7 @@ const AdvancedSmtpManager: React.FC = () => {
                     <div className="font-semibold mb-2">Invalid Email Domains (first 20)</div>
                     <ul className="text-sm list-disc list-inside max-h-48 overflow-y-auto">
                       {(mixedResult?.categories?.emailsValidated?.invalid || []).slice(0, 20).map((it: any, idx: number) => (
-                        <li key={idx}>{it.email}: {it.error}</li>
+                        <li key={idx} className="flex items-center justify-between gap-2"><span>{it.email}: {it.error}</span><button className="text-xs underline" onClick={()=>copyToClipboard(it.email)}>Copy</button></li>
                       ))}
                     </ul>
                   </div>
@@ -356,7 +390,7 @@ const AdvancedSmtpManager: React.FC = () => {
         </div>
 
         {/* Saved Mixed Credentials */}
-        <div className="mb-6 bg-white rounded-lg shadow p-4 border border-gray-200">
+        <div id="saved-mixed" className="mb-6 bg-white rounded-lg shadow p-4 border border-gray-200">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold">Saved Mixed Credentials</h2>
             <button onClick={loadMixed} disabled={mixedLoading} className={`px-3 py-2 rounded border ${mixedLoading ? 'opacity-60' : ''}`}>{mixedLoading ? 'Refreshing...' : 'Refresh'}</button>
@@ -381,16 +415,18 @@ const AdvancedSmtpManager: React.FC = () => {
                       }} checked={mixedLists.emailAccounts.length>0 && mixedSelected.emailAccounts.size === mixedLists.emailAccounts.length} /></th>
                       <th className="px-3 py-2 text-left">Email</th>
                       <th className="px-3 py-2 text-left">Valid</th>
+                      <th className="px-3 py-2"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {mixedLists.emailAccounts.length === 0 ? (
-                      <tr><td className="px-3 py-3 text-gray-500" colSpan={3}>No saved email accounts.</td></tr>
+                      <tr><td className="px-3 py-3 text-gray-500" colSpan={4}>No saved email accounts.</td></tr>
                     ) : mixedLists.emailAccounts.map((it: any) => (
                       <tr key={it.id} className="border-t">
                         <td className="px-3 py-2"><input type="checkbox" checked={mixedSelected.emailAccounts.has(it.id)} onChange={() => toggleMixedSelect('emailAccounts', it.id)} /></td>
                         <td className="px-3 py-2">{it.email}</td>
                         <td className="px-3 py-2">{it.isValid ? 'Yes' : 'No'}</td>
+                        <td className="px-3 py-2 text-right"><button className="text-xs underline" onClick={()=>copyToClipboard(`${it.email}:${it.password||''}`)}>Copy</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -416,16 +452,18 @@ const AdvancedSmtpManager: React.FC = () => {
                       }} checked={mixedLists.webmail.length>0 && mixedSelected.webmail.size === mixedLists.webmail.length} /></th>
                       <th className="px-3 py-2 text-left">URL</th>
                       <th className="px-3 py-2 text-left">User</th>
+                      <th className="px-3 py-2"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {mixedLists.webmail.length === 0 ? (
-                      <tr><td className="px-3 py-3 text-gray-500" colSpan={3}>No saved webmail creds.</td></tr>
+                      <tr><td className="px-3 py-3 text-gray-500" colSpan={4}>No saved webmail creds.</td></tr>
                     ) : mixedLists.webmail.map((it: any) => (
                       <tr key={it.id} className="border-t">
                         <td className="px-3 py-2"><input type="checkbox" checked={mixedSelected.webmail.has(it.id)} onChange={() => toggleMixedSelect('webmail', it.id)} /></td>
-                        <td className="px-3 py-2">{it.url}</td>
+                        <td className="px-3 py-2"><a href={it.url} target="_blank" rel="noreferrer" className="text-blue-600 underline">{it.url}</a></td>
                         <td className="px-3 py-2">{it.username}</td>
+                        <td className="px-3 py-2 text-right"><button className="text-xs underline" onClick={()=>copyToClipboard(`${it.url}|${it.username}|***`)}>Copy</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -451,16 +489,18 @@ const AdvancedSmtpManager: React.FC = () => {
                       }} checked={mixedLists.cpanel.length>0 && mixedSelected.cpanel.size === mixedLists.cpanel.length} /></th>
                       <th className="px-3 py-2 text-left">URL</th>
                       <th className="px-3 py-2 text-left">User</th>
+                      <th className="px-3 py-2"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {mixedLists.cpanel.length === 0 ? (
-                      <tr><td className="px-3 py-3 text-gray-500" colSpan={3}>No saved cPanel creds.</td></tr>
+                      <tr><td className="px-3 py-3 text-gray-500" colSpan={4}>No saved cPanel creds.</td></tr>
                     ) : mixedLists.cpanel.map((it: any) => (
                       <tr key={it.id} className="border-t">
                         <td className="px-3 py-2"><input type="checkbox" checked={mixedSelected.cpanel.has(it.id)} onChange={() => toggleMixedSelect('cpanel', it.id)} /></td>
-                        <td className="px-3 py-2">{it.url}</td>
+                        <td className="px-3 py-2"><a href={it.url} target="_blank" rel="noreferrer" className="text-blue-600 underline">{it.url}</a></td>
                         <td className="px-3 py-2">{it.username}</td>
+                        <td className="px-3 py-2 text-right"><button className="text-xs underline" onClick={()=>copyToClipboard(`${it.url}|${it.username}|***`)}>Copy</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -486,16 +526,18 @@ const AdvancedSmtpManager: React.FC = () => {
                       }} checked={mixedLists.phpmyadmin.length>0 && mixedSelected.phpmyadmin.size === mixedLists.phpmyadmin.length} /></th>
                       <th className="px-3 py-2 text-left">URL</th>
                       <th className="px-3 py-2 text-left">User</th>
+                      <th className="px-3 py-2"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {mixedLists.phpmyadmin.length === 0 ? (
-                      <tr><td className="px-3 py-3 text-gray-500" colSpan={3}>No saved phpMyAdmin creds.</td></tr>
+                      <tr><td className="px-3 py-3 text-gray-500" colSpan={4}>No saved phpMyAdmin creds.</td></tr>
                     ) : mixedLists.phpmyadmin.map((it: any) => (
                       <tr key={it.id} className="border-t">
                         <td className="px-3 py-2"><input type="checkbox" checked={mixedSelected.phpmyadmin.has(it.id)} onChange={() => toggleMixedSelect('phpmyadmin', it.id)} /></td>
-                        <td className="px-3 py-2">{it.url}</td>
+                        <td className="px-3 py-2"><a href={it.url} target="_blank" rel="noreferrer" className="text-blue-600 underline">{it.url}</a></td>
                         <td className="px-3 py-2">{it.username}</td>
+                        <td className="px-3 py-2 text-right"><button className="text-xs underline" onClick={()=>copyToClipboard(`${it.url}|${it.username}|***`)}>Copy</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -520,15 +562,17 @@ const AdvancedSmtpManager: React.FC = () => {
                         setMixedSelected(prev => ({ ...prev, emails: all }));
                       }} checked={mixedLists.emails.length>0 && mixedSelected.emails.size === mixedLists.emails.length} /></th>
                       <th className="px-3 py-2 text-left">Email</th>
+                      <th className="px-3 py-2"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {mixedLists.emails.length === 0 ? (
-                      <tr><td className="px-3 py-3 text-gray-500" colSpan={2}>No saved emails.</td></tr>
+                      <tr><td className="px-3 py-3 text-gray-500" colSpan={3}>No saved emails.</td></tr>
                     ) : mixedLists.emails.map((it: any) => (
                       <tr key={it.id} className="border-t">
                         <td className="px-3 py-2"><input type="checkbox" checked={mixedSelected.emails.has(it.id)} onChange={() => toggleMixedSelect('emails', it.id)} /></td>
                         <td className="px-3 py-2">{it.email}</td>
+                        <td className="px-3 py-2 text-right"><button className="text-xs underline" onClick={()=>copyToClipboard(it.email)}>Copy</button></td>
                       </tr>
                     ))}
                   </tbody>
