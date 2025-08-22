@@ -43,6 +43,9 @@ const AdvancedSmtpManager: React.FC = () => {
   } | null>(null);
   const [validating, setValidating] = useState(false);
   const [validateProgress, setValidateProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
+  const [mixedFile, setMixedFile] = useState<File | null>(null);
+  const [mixedResult, setMixedResult] = useState<any | null>(null);
+  const [mixUploading, setMixUploading] = useState(false);
 
   useEffect(() => {
     if (auth.user) {
@@ -186,6 +189,49 @@ const AdvancedSmtpManager: React.FC = () => {
               Delete Selected
             </button>
           </div>
+        </div>
+
+        {/* Mixed Ingest */}
+        <div className="mb-6 bg-white rounded-lg shadow p-4 border border-gray-200">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Mixed Upload (SMTP/Webmail/cPanel/phpMyAdmin/Emails)</h2>
+            <div className="flex items-center space-x-3">
+              <input type="file" accept=".txt,.csv" onChange={(e) => setMixedFile(e.target.files?.[0] || null)} />
+              <button
+                onClick={async () => {
+                  if (!mixedFile) { toast.error('Select a mixed file'); return; }
+                  setMixUploading(true);
+                  try {
+                    const { ingest } = await import('../services/api');
+                    const res = await ingest.importMixed(mixedFile);
+                    setMixedResult(res);
+                    toast.success('Mixed file processed');
+                    await loadConfigs();
+                  } catch (e: any) {
+                    toast.error(e?.message || 'Mixed upload failed');
+                  } finally {
+                    setMixUploading(false);
+                    setMixedFile(null);
+                  }
+                }}
+                disabled={!mixedFile || mixUploading}
+                className={`px-4 py-2 rounded text-white ${(!mixedFile || mixUploading) ? 'bg-gray-400' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+              >
+                {mixUploading ? 'Processing...' : 'Upload Mixed'}
+              </button>
+            </div>
+          </div>
+          {mixedResult && (
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+              <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">SMTP</div><div className="font-semibold">{mixedResult?.stats?.smtp} (valid {mixedResult?.stats?.smtpValid}, invalid {mixedResult?.stats?.smtpInvalid})</div></div>
+              <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Webmail</div><div className="font-semibold">{mixedResult?.stats?.webmail}</div></div>
+              <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">cPanel</div><div className="font-semibold">{mixedResult?.stats?.cpanel}</div></div>
+              <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">phpMyAdmin</div><div className="font-semibold">{mixedResult?.stats?.phpmyadmin}</div></div>
+              <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Email:Pass</div><div className="font-semibold">{mixedResult?.stats?.emailPairs}</div></div>
+              <div className="p-3 bg-gray-50 rounded border"><div className="text-gray-500">Emails</div><div className="font-semibold">{mixedResult?.stats?.emails}</div></div>
+              <div className="p-3 bg-gray-50 rounded border col-span-full"><div className="text-gray-500">Unknown</div><div className="font-semibold">{mixedResult?.stats?.unknown}</div></div>
+            </div>
+          )}
         </div>
 
         {uploadSummary && (

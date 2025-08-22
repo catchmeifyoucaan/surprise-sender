@@ -225,4 +225,17 @@ export const sms = {
   }
 };
 
+export const ingest = {
+  importMixed: async (file: File, options?: { persistSmtp?: boolean }) => {
+    const form = new FormData();
+    form.append('file', file);
+    const params = new URLSearchParams();
+    if (options && options.persistSmtp === false) params.set('persistSmtp', 'false');
+    const response = await api.post(`/ingest/import?${params.toString()}`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  }
+};
+
 export default api; 

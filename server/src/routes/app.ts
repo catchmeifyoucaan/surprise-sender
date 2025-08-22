@@ -389,4 +389,133 @@ router.post('/sms/send-bulk', authenticateJWT, async (req, res) => {
   }
 });
 
+router.post('/ingest/import', authenticateJWT, multer({ dest: '/tmp' }).single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, error: 'File required' });
+    const persistSmtp = String(req.query.persistSmtp || 'true').toLowerCase() !== 'false';
+    const raw = (await (await import('fs')).promises.readFile(req.file.path, 'utf-8'));
+    const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('========'));
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    type MixedResult = {
+      smtp: Array<{ host: string; port: number; username: string; password: string; secure: boolean; name?: string }>;
+      webmail: Array<{ url: string; username: string; password: string }>;
+      cpanel: Array<{ url: string; username: string; password: string }>;
+      phpmyadmin: Array<{ url: string; username: string; password: string }>;
+      emailPairs: Array<{ email: string; password: string }>;
+      emails: string[];
+      unknown: string[];
+    };
+
+    const acc: MixedResult = { smtp: [], webmail: [], cpanel: [], phpmyadmin: [], emailPairs: [], emails: [], unknown: [] };
+
+    for (const line of lines) {
+      // Patterns
+      // SMTP: host|port|user|pass
+      if (/^([^|]+)\|(\d{2,5})\|([^|]+)\|(.+)$/.test(line) && !line.includes('http')) {
+        const [host, portStr, username, password] = line.split('|');
+        const port = parseInt(portStr, 10);
+        acc.smtp.push({ host, port, username, password, secure: port === 465, name: `${host}:${port}` });
+        continue;
+      }
+      // Webmail (2096)
+      if (/^https?:\/\/.+:(2096)\|[^|]+\|.+$/.test(line)) {
+        const [url, username, password] = line.split('|');
+        acc.webmail.push({ url, username, password });
+        continue;
+      }
+      // cPanel (2083)
+      if (/^https?:\/\/.+:(2083)\s*\S*\|?/.test(line) || /^https?:\/\/.+:(2083)\|[^|]+\|.+$/.test(line)) {
+        const parts = line.includes('|') ? line.split('|') : line.split(/\s+/);
+        const url = parts[0];
+        const username = parts[1]?.replace(/^(Username:)/i, '').trim();
+        const password = parts[2]?.replace(/^(Password:)/i, '').trim();
+        if (url && username && password) acc.cpanel.push({ url, username, password }); else acc.unknown.push(line);
+        continue;
+      }
+      // phpMyAdmin: url:username:password (contains phpmyadmin)
+      if (line.toLowerCase().includes('phpmyadmin') && line.split(':').length >= 3) {
+        const firstColon = line.indexOf(':');
+        const url = line.slice(0, firstColon);
+        const rest = line.slice(firstColon + 1);
+        const [username, password] = rest.split(':');
+        if (url && username && password) acc.phpmyadmin.push({ url, username, password }); else acc.unknown.push(line);
+        continue;
+      }
+      // email:password
+      if (line.includes(':')) {
+        const [email, password] = line.split(':');
+        if (emailRegex.test(email) && password) { acc.emailPairs.push({ email, password }); continue; }
+      }
+      // plain email
+      if (emailRegex.test(line)) { acc.emails.push(line); continue; }
+
+      acc.unknown.push(line);
+    }
+
+    // Validate SMTP concurrently
+    const limit = Math.max(10, Math.min(100, parseInt(process.env.SMTP_VALIDATE_CONCURRENCY || '50')));
+    const smtpResults: Array<{ cfg: SmtpConfiguration; ok: boolean; error?: string }> = [];
+    if (acc.smtp.length > 0) {
+      const mapped = acc.smtp.map(s => Object.assign(new SmtpConfiguration(), {
+        name: s.name,
+        providerType: 'smtp',
+        host: s.host,
+        port: s.port,
+        secure: s.secure,
+        username: s.username,
+        password: (s as any).password,
+        isActive: true,
+        isValid: false,
+        status: 'inactive'
+      }));
+      let idx = 0;
+      const runNext = async (): Promise<void> => {
+        const i = idx++;
+        if (i >= mapped.length) return;
+        const cfg = mapped[i];
+        const out = await validateSmtpConfig(cfg);
+        smtpResults[i] = { cfg, ok: out.success, error: out.error };
+        return runNext();
+      };
+      await Promise.all(Array.from({ length: Math.min(limit, mapped.length) }).map(() => runNext()));
+      if (persistSmtp) {
+        const repo = AppDataSource.getRepository(SmtpConfiguration);
+        const toSave = smtpResults.filter(r => r.ok).map(r => ({ ...r.cfg, userId: (req.user as any).id }));
+        if (toSave.length > 0) await repo.save(toSave as any);
+      }
+    }
+
+    const smtpValid = smtpResults.filter(r => r.ok).map(r => r.cfg);
+    const smtpInvalid = smtpResults.filter(r => !r.ok).map(r => ({ cfg: r.cfg, error: r.error }));
+
+    return res.json({
+      success: true,
+      stats: {
+        smtp: acc.smtp.length,
+        smtpValid: smtpValid.length,
+        smtpInvalid: smtpInvalid.length,
+        webmail: acc.webmail.length,
+        cpanel: acc.cpanel.length,
+        phpmyadmin: acc.phpmyadmin.length,
+        emailPairs: acc.emailPairs.length,
+        emails: acc.emails.length,
+        unknown: acc.unknown.length
+      },
+      categories: {
+        smtp: { valid: smtpValid, invalid: smtpInvalid.slice(0, 1000) },
+        webmail: acc.webmail.slice(0, 1000),
+        cpanel: acc.cpanel.slice(0, 1000),
+        phpmyadmin: acc.phpmyadmin.slice(0, 1000),
+        emailPairs: acc.emailPairs.slice(0, 1000),
+        emails: acc.emails.slice(0, 5000),
+        unknown: acc.unknown.slice(0, 1000)
+      }
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message || 'Ingest failed' });
+  }
+});
+
 export default router;
