@@ -158,40 +158,81 @@ router.post('/smtp/import-configs', authenticateJWT, upload.single('file'), asyn
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'File required' });
 
-    // Parse rows as potential SMTP configs: host,port,username,password,secure,name
-    // Use a lightweight CSV/TXT/Excel parser from validateAndProcessFile to get rows
-    const dummyCfg = Object.assign(new SmtpConfiguration(), { limits: { maxFileSize: 50 * 1024 * 1024 } });
-    const parsed = await validateAndProcessFile(req.file as any, dummyCfg as any);
-    if (!parsed.success) return res.status(400).json({ success: false, error: parsed.error || 'Parse failed' });
-    const rows: any[] = parsed.data || [];
+    const fs = (await import('fs')).promises as any;
+    const path = await import('path');
+    const xlsxLib: any = await import('xlsx');
 
-    // Map rows to SmtpConfiguration objects
-    const mapped: SmtpConfiguration[] = rows.map((r) => {
-      const cfg = new SmtpConfiguration();
-      cfg.name = r.name || r.host || r.username || 'SMTP';
-      cfg.providerType = (r.providerType || 'smtp') as any;
-      cfg.host = r.host;
-      cfg.port = parseInt(String(r.port || 587));
-      cfg.username = r.username;
-      (cfg as any).password = r.password; // not persisted if entity disallows, adjust entity accordingly
-      cfg.secure = String(r.secure || '').toLowerCase() === 'true' || r.port === 465;
-      cfg.webmailProvider = r.webmailProvider;
-      cfg.apiProvider = r.apiProvider;
-      (cfg as any).apiKey = r.apiKey;
-      cfg.fromEmail = r.fromEmail;
-      cfg.fromName = r.fromName;
-      cfg.isActive = true;
-      cfg.isValid = false;
-      cfg.status = 'inactive' as any;
-      return cfg;
-    }).filter(c => c.host && c.port && c.username && ((c as any).password || c.apiProvider));
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const raw = await fs.readFile(req.file.path, 'utf-8').catch(() => null);
 
-    // Fast concurrent validation with limited concurrency
+    type RawRow = { host?: string; port?: any; username?: string; password?: string; secure?: any; name?: string };
+    const rows: RawRow[] = [];
+
+    const pushIfValid = (host?: string, port?: any, username?: string, password?: string, secure?: any, name?: string) => {
+      const parsedPort = parseInt(String(port ?? 587), 10);
+      if (!host || !parsedPort || !username || !password) return;
+      const isSecure = String(secure ?? '').toLowerCase() === 'true' || parsedPort === 465;
+      rows.push({ host: String(host).trim(), port: parsedPort, username: String(username).trim(), password: String(password), secure: isSecure, name: name ? String(name).trim() : `${host}:${parsedPort}` });
+    };
+
+    if (ext === '.xlsx' || ext === '.xls') {
+      const wb = xlsxLib.readFile(req.file.path);
+      const sheetName = wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const json: any[] = xlsxLib.utils.sheet_to_json(ws);
+      for (const r of json) {
+        const get = (k: string) => r[k] ?? r[k.toLowerCase()] ?? r[k.toUpperCase()];
+        pushIfValid(get('host'), get('port'), get('username'), get('password'), get('secure'), get('name'));
+      }
+    } else if (ext === '.csv') {
+      const text = raw || '';
+      const lines = text.split(/\r?\n/).filter((l: string) => l.trim());
+      const header = lines[0].split(',').map((h: string) => h.trim().toLowerCase());
+      const hasHeader = ['host', 'port', 'username', 'password'].every((k) => header.includes(k));
+      if (hasHeader) {
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(',');
+          const getBy = (key: string) => cols[header.indexOf(key)]?.trim();
+          pushIfValid(getBy('host'), getBy('port'), getBy('username'), getBy('password'), getBy('secure'), getBy('name'));
+        }
+      } else {
+        for (const line of lines) {
+          const parts = line.split(/[|,;\t]/).map((s: string) => s.trim()).filter(Boolean);
+          if (parts.length >= 4) pushIfValid(parts[0], parts[1], parts[2], parts.slice(3).join('|'));
+        }
+      }
+    } else {
+      // Treat as text of lines host|port|username|password (or comma/semicolon)
+      const text = raw || '';
+      const lines = text.split(/\r?\n/).filter((l: string) => l.trim());
+      for (const line of lines) {
+        const parts = line.split(/[|,;\t]/).map((s: string) => s.trim()).filter(Boolean);
+        if (parts.length >= 4) pushIfValid(parts[0], parts[1], parts[2], parts.slice(3).join('|'));
+      }
+    }
+
+    if (rows.length === 0) {
+      return res.json({ success: true, total: 0, successCount: 0, failedCount: 0, errors: ['No valid SMTP entries found'], configurations: [] });
+    }
+
+    // Map to entity and validate concurrently
+    const mapped = rows.map((r) => Object.assign(new SmtpConfiguration(), {
+      name: r.name,
+      providerType: 'smtp',
+      host: r.host,
+      port: r.port,
+      secure: r.secure,
+      username: r.username,
+      password: r.password,
+      isActive: true,
+      isValid: false,
+      status: 'inactive'
+    }));
+
     const limit = Math.max(10, Math.min(100, parseInt(process.env.SMTP_VALIDATE_CONCURRENCY || '50')));
     let idx = 0;
     const results: Array<{ cfg: SmtpConfiguration; ok: boolean; error?: string }> = [];
-
-    const runNext = async () => {
+    const runNext = async (): Promise<void> => {
       const i = idx++;
       if (i >= mapped.length) return;
       const cfg = mapped[i];
@@ -199,23 +240,21 @@ router.post('/smtp/import-configs', authenticateJWT, upload.single('file'), asyn
       results[i] = { cfg, ok: out.success, error: out.error };
       return runNext();
     };
-
     await Promise.all(Array.from({ length: Math.min(limit, mapped.length) }).map(() => runNext()));
 
-    // Split and sort
-    const valids = sortSmtpConfigs(results.filter(r => r.ok).map(r => r.cfg));
-    const invalids = results.filter(r => !r.ok).map(r => ({ cfg: r.cfg, error: r.error }));
+    const ok = results.filter(r => r.ok).map(r => r.cfg);
+    const bad = results.filter(r => !r.ok);
 
     // Persist valid ones
     const repo = AppDataSource.getRepository(SmtpConfiguration);
-    const saved = await repo.save(valids.map(v => ({ ...v, userId: (req.user as any).id })) as any);
+    const saved = ok.length > 0 ? await repo.save(ok.map(v => ({ ...v, userId: (req.user as any).id })) as any) : [];
 
     return res.json({
       success: true,
-      total: mapped.length,
+      total: rows.length,
       successCount: saved.length,
-      failedCount: invalids.length,
-      errors: invalids.slice(0, 1000).map(i => `${i.cfg.username}@${i.cfg.host}: ${i.error}`),
+      failedCount: bad.length,
+      errors: bad.slice(0, 1000).map(b => `${b.cfg.username}@${b.cfg.host}: ${b.error}`),
       configurations: saved
     });
   } catch (e: any) {
