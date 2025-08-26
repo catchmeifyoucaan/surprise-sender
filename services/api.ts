@@ -132,8 +132,19 @@ export const users = {
 
 export const smtp = {
   // SmtpTab expected names
-  getConfigurations: async () => {
-    const response = await api.get('/smtp/configs');
+  getConfigurations: async (opts?: { validated?: boolean }) => {
+    const params = new URLSearchParams();
+    if (opts?.validated) params.set('validated', 'true');
+    const qs = params.toString();
+    const response = await api.get(`/smtp/configs${qs ? `?${qs}` : ''}`);
+    return response.data;
+  },
+  getAllConfigurations: async (opts?: { validated?: boolean; admin?: boolean }) => {
+    const params = new URLSearchParams();
+    if (opts?.validated) params.set('validated', 'true');
+    if (opts?.admin) params.set('admin', 'true');
+    const qs = params.toString();
+    const response = await api.get(`/smtp/all-configs${qs ? `?${qs}` : ''}`);
     return response.data;
   },
   addConfiguration: async (config: Partial<SmtpConfiguration>) => {
@@ -228,7 +239,7 @@ export const mixed = {
 
 export const email = {
   send: async (data: EmailData) => {
-    const response = await api.post('/send-email', data);
+    const response = await api.post('/email/send', data);
     return response.data;
   },
 

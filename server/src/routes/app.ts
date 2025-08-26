@@ -106,9 +106,12 @@ router.post('/users/change-password', authenticateJWT, async (req, res) => {
 });
 
 // SMTP
-router.get('/smtp/configs', authenticateJWT, async (_req, res) => {
+router.get('/smtp/configs', authenticateJWT, async (req, res) => {
   const repo = AppDataSource.getRepository(SmtpConfiguration);
-  const configs = await repo.find({ order: { createdAt: 'DESC' } });
+  const validatedOnly = String(req.query.validated || '').toLowerCase() === 'true';
+  const where: any = { userId: (req.user as any).id };
+  if (validatedOnly) where.isValid = true as any;
+  const configs = await repo.find({ where, order: { createdAt: 'DESC' } });
   return res.json(configs);
 });
 
@@ -119,10 +122,27 @@ router.post('/smtp/configs', authenticateJWT, async (req, res) => {
   return res.status(201).json(saved);
 });
 
+// Admin: list all configs (optional) or scoped to user unless admin=true
+router.get('/smtp/all-configs', authenticateJWT, async (req, res) => {
+  const repo = AppDataSource.getRepository(SmtpConfiguration);
+  const adminOnly = String(req.query.admin || '').toLowerCase() === 'true';
+  const validatedOnly = String(req.query.validated || '').toLowerCase() === 'true';
+  const where: any = {};
+  if (!(req.user as any).role || (req.user as any).role !== 'admin' || !adminOnly) {
+    where.userId = (req.user as any).id;
+  }
+  if (validatedOnly) where.isValid = true as any;
+  const configs = await repo.find({ where, order: { createdAt: 'DESC' } });
+  return res.json(configs);
+});
+
 router.patch('/smtp/configs/:id', authenticateJWT, async (req, res) => {
   const repo = AppDataSource.getRepository(SmtpConfiguration);
   const cfg = await repo.findOne({ where: { id: req.params.id } });
   if (!cfg) return res.status(404).json({ success: false, error: 'Not found' });
+  if (cfg.userId !== (req.user as any).id && (req.user as any).role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Forbidden' });
+  }
   Object.assign(cfg, req.body || {});
   const saved = await repo.save(cfg);
   return res.json({ success: true, configuration: saved });
@@ -133,6 +153,9 @@ router.post('/smtp/configs/:id/validate', authenticateJWT, async (req, res) => {
     const repo = AppDataSource.getRepository(SmtpConfiguration);
     const cfg = await repo.findOne({ where: { id: req.params.id } });
     if (!cfg) return res.status(404).json({ success: false, error: 'Not found' });
+    if (cfg.userId !== (req.user as any).id && (req.user as any).role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
     const result = await validateSmtpConfig(cfg);
     cfg.isValid = !!result.success;
     (cfg as any).lastValidated = new Date();
@@ -148,6 +171,9 @@ router.delete('/smtp/configs/:id', authenticateJWT, async (req, res) => {
   const repo = AppDataSource.getRepository(SmtpConfiguration);
   const cfg = await repo.findOne({ where: { id: req.params.id } });
   if (!cfg) return res.status(404).json({ success: false, error: 'Not found' });
+  if (cfg.userId !== (req.user as any).id && (req.user as any).role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Forbidden' });
+  }
   await repo.remove(cfg);
   return res.json({ success: true });
 });
@@ -273,9 +299,10 @@ router.post('/smtp/bulk-delete', authenticateJWT, async (req, res) => {
     if (ids.length === 0) return res.status(400).json({ success: false, error: 'ids[] required' });
     const repo = AppDataSource.getRepository(SmtpConfiguration);
     const toDelete = await repo.findByIds(ids as any);
-    if (toDelete.length === 0) return res.json({ success: true, deleted: 0 });
-    await repo.remove(toDelete);
-    return res.json({ success: true, deleted: toDelete.length });
+    const allowed = toDelete.filter(c => c.userId === (req.user as any).id || (req.user as any).role === 'admin');
+    if (allowed.length === 0) return res.json({ success: true, deleted: 0 });
+    await repo.remove(allowed);
+    return res.json({ success: true, deleted: allowed.length });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e?.message || 'Bulk delete failed' });
   }
@@ -860,9 +887,10 @@ router.post('/smtp/bulk-delete', authenticateJWT, async (req, res) => {
     if (ids.length === 0) return res.status(400).json({ success: false, error: 'ids[] required' });
     const repo = AppDataSource.getRepository(SmtpConfiguration);
     const toDelete = await repo.findByIds(ids as any);
-    if (toDelete.length === 0) return res.json({ success: true, deleted: 0 });
-    await repo.remove(toDelete);
-    return res.json({ success: true, deleted: toDelete.length });
+    const allowed = toDelete.filter(c => c.userId === (req.user as any).id || (req.user as any).role === 'admin');
+    if (allowed.length === 0) return res.json({ success: true, deleted: 0 });
+    await repo.remove(allowed);
+    return res.json({ success: true, deleted: allowed.length });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e?.message || 'Bulk delete failed' });
   }

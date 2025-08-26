@@ -8,8 +8,21 @@ import agentRoutes from './routes/agents';
 import adminRoutes from './routes/admin';
 import appRoutes from './routes/app';
 import { errorHandler } from './middleware/validation';
+import rateLimit from 'express-rate-limit';
 
 const app = express();
+
+const isProduction = process.env.NODE_ENV === 'production';
+if (isProduction && !process.env.JWT_SECRET) {
+  // eslint-disable-next-line no-console
+  console.error('Missing JWT_SECRET in production. Refusing to start.');
+  process.exit(1);
+}
+if (isProduction && !process.env.CORS_ORIGIN) {
+  // eslint-disable-next-line no-console
+  console.error('Missing CORS_ORIGIN in production. Refusing to start.');
+  process.exit(1);
+}
 
 // CORS
 app.use(
@@ -20,6 +33,22 @@ app.use(
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
+
+// Apply basic rate limiting to sensitive endpoints
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const ingestLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/auth', authLimiter);
+app.use('/api/ingest', ingestLimiter);
 
 // Body parser
 app.use(express.json({ limit: '50mb', strict: false }));
@@ -82,7 +111,7 @@ app.use(errorHandler);
 // Start after DB init
 AppDataSource.initialize()
   .then(() => {
-    const PORT = process.env.PORT || 3001;
+    const PORT = process.env.PORT || 3000;
     // Seed default admin (optional)
     (async () => {
       try {
