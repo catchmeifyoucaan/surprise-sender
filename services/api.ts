@@ -228,7 +228,7 @@ export const mixed = {
 
 export const email = {
   send: async (data: EmailData) => {
-    const response = await api.post('/send-email', data);
+    const response = await api.post('/email/send', data);
     return response.data;
   },
 
