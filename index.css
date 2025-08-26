@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens used across the app */
+:root {
+	--color-background: #0b1220; /* dark slate */
+	--color-text-primary: #e5e7eb; /* gray-200 */
+	--color-text-secondary: #9ca3af; /* gray-400 */
+	--color-accent: #0ea5e9; /* sky-500 */
+	--color-accent-light: #38bdf8; /* sky-400 */
+}
+
+/* Map semantic class names referenced by components to Tailwind utilities */
+.bg-background { @apply bg-gray-950 !important; }
+.text-text-primary { @apply text-gray-100 !important; }
+.text-text-secondary { @apply text-gray-400 !important; }
+.bg-primary { @apply bg-gray-900 !important; }
+.text-primary { @apply text-sky-400 !important; }
+.border-accent { @apply border-sky-500 !important; }
+.bg-accent { @apply bg-sky-600 !important; }
+.text-accent { @apply text-sky-500 !important; }
+.hover\:text-accent\/80:hover { @apply text-sky-400 !important; }
+.hover\:bg-accent-light:hover { @apply bg-sky-500 !important; }
+
+/* form elements baseline */
+input, select, textarea { @apply bg-gray-800 text-gray-100 placeholder-gray-400 border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500; }
+button { @apply rounded-md; }
