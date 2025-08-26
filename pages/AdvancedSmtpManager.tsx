@@ -68,7 +68,8 @@ const AdvancedSmtpManager: React.FC = () => {
   const loadConfigs = async () => {
     setLoading(true);
     try {
-      const list = await smtpApi.getConfigurations();
+      const useAll = auth.user?.role === 'admin';
+      const list = useAll ? await smtpApi.getAllConfigurations({ admin: true }) : await smtpApi.getConfigurations();
       setConfigs(list || []);
     } catch (e) {
       toast.error('Failed to load SMTP configurations');
@@ -553,6 +554,7 @@ const AdvancedSmtpManager: React.FC = () => {
                     <td className="px-4 py-2 text-sm text-gray-600">{c.status}</td>
                     <td className="px-4 py-2 space-x-2">
                       <button onClick={() => validateOne(c.id)} className="text-blue-600 hover:underline">Validate</button>
+                      <button onClick={async () => { await smtpApi.addConfiguration({ id: c.id, isActive: !c.isActive } as any); toast.success(c.isActive ? 'Deactivated' : 'Activated'); loadConfigs(); }} className="text-indigo-600 hover:underline">{c.isActive ? 'Deactivate' : 'Activate'}</button>
                       <button onClick={async () => { await smtpApi.deleteConfiguration(c.id); toast.success('Deleted'); loadConfigs(); }} className="text-red-600 hover:underline">Delete</button>
                     </td>
                   </tr>

@@ -21,7 +21,9 @@ const HtmlBulkSenderPage: React.FC = () => {
   const [isSending, setIsSending] = useState(false);
   const [formMessage, setFormMessage] = useState<string | null>(null);
 
-  const smtpItems = auth.smtpConfigurations.filter(s => s.isValid).map(s => ({ id: s.id, host: (s as any).host, port: (s as any).port, username: (s as any).user, label: (s as any).label, isValid: s.isValid }));
+  const [smtpList, setSmtpList] = useState<any[]>([]);
+  useEffect(() => { (async () => { try { const list = await smtpApi.getConfigurations({ validated: true }); setSmtpList(list || []); } catch {} })(); }, []);
+  const smtpItems = (smtpList || []).filter(s => s.isValid).map((s: any) => ({ id: s.id, host: s.host, port: s.port, username: s.username, label: s.label, isValid: s.isValid }));
 
   const handleFileSelect = useCallback((file: File | null | string) => {
     if (typeof file === 'string') return;
