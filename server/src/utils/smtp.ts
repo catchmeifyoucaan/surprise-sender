@@ -1,15 +1,9 @@
 import nodemailer from 'nodemailer';
 import { SmtpConfiguration } from '../entities/SmtpConfiguration';
-import * as fs from 'fs';
 import * as path from 'path';
-import * as csv from 'csv-parse';
-import * as xlsx from 'xlsx';
-import { promisify } from 'util';
+import { Worker } from 'worker_threads';
 import { Multer } from 'multer';
-
-const readFileAsync = promisify(fs.readFile);
-const writeFileAsync = promisify(fs.writeFile);
-const mkdirAsync = promisify(fs.mkdir);
+import { storage } from '../services/storage';
 
 interface FileData {
     email: string;
@@ -94,40 +88,30 @@ export async function validateAndProcessFile(
         }
 
         // Validate file type
-        const fileExt = path.extname(file.originalname).toLowerCase();
+        const fileExt = path.extname(file.originalname).toLowerCase() as '.csv' | '.xlsx' | '.xls' | '.txt';
         const allowedTypes = config.limits?.allowedFileTypes ?? ['.txt', '.csv', '.xlsx', '.xls'];
         if (!allowedTypes.includes(fileExt)) {
             throw new Error(`File type ${fileExt} is not allowed. Allowed types: ${allowedTypes.join(', ')}`);
         }
 
-        // Create upload directory if it doesn't exist
-        const uploadDir = path.join(process.cwd(), 'uploads/smtp');
-        await mkdirAsync(uploadDir, { recursive: true });
+        // Note: File storage is now handled by the storage abstraction layer
+        // This allows easy migration to cloud storage (S3, GCS, Azure Blob, etc.)
+        // Files are currently stored locally but can be moved to cloud by setting STORAGE_TYPE env var
 
-        // Process file based on type
-        let data: FileData[] = [];
-        switch (fileExt) {
-            case '.csv':
-                data = await processCsvFile(file.path);
-                break;
-            case '.xlsx':
-            case '.xls':
-                data = await processExcelFile(file.path);
-                break;
-            case '.txt':
-                data = await processTxtFile(file.path);
-                break;
-            default:
-                throw new Error('Unsupported file type');
+        // Process file in worker thread to avoid blocking the event loop
+        const workerResult = await processFileInWorker(file.path, fileExt);
+
+        if (!workerResult.success || !workerResult.data) {
+            throw new Error(workerResult.error || 'File processing failed');
         }
 
         // Validate data
-        const validationResult = validateData(data, config);
+        const validationResult = validateData(workerResult.data, config);
         if (!validationResult.success) {
             throw new Error(validationResult.error);
         }
 
-        return { success: true, data };
+        return { success: true, data: workerResult.data };
     } catch (error) {
         console.error('File processing error:', error);
         return {
@@ -137,47 +121,30 @@ export async function validateAndProcessFile(
     }
 }
 
-async function processCsvFile(filePath: string): Promise<FileData[]> {
-    const fileContent = await readFileAsync(filePath, 'utf-8');
+async function processFileInWorker(
+    filePath: string,
+    fileType: '.csv' | '.xlsx' | '.xls' | '.txt'
+): Promise<{ success: boolean; data?: FileData[]; error?: string }> {
     return new Promise((resolve, reject) => {
-        csv.parse(fileContent, {
-            columns: true,
-            skip_empty_lines: true,
-            trim: true
-        }, (err: Error | undefined, data: FileData[]) => {
-            if (err) reject(err);
-            else resolve(data);
+        const workerPath = path.join(__dirname, '../workers/fileProcessor.js');
+        const worker = new Worker(workerPath, {
+            workerData: { filePath, fileType }
+        });
+
+        worker.on('message', (result) => {
+            resolve(result);
+        });
+
+        worker.on('error', (error) => {
+            reject(error);
+        });
+
+        worker.on('exit', (code) => {
+            if (code !== 0) {
+                reject(new Error(`Worker stopped with exit code ${code}`));
+            }
         });
     });
-}
-
-async function processExcelFile(filePath: string): Promise<FileData[]> {
-    try {
-        const workbook = xlsx.readFile(filePath);
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        return xlsx.utils.sheet_to_json<FileData>(worksheet);
-    } catch (error) {
-        throw new Error(`Failed to process Excel file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-}
-
-async function processTxtFile(filePath: string): Promise<FileData[]> {
-    try {
-        const content = await readFileAsync(filePath, 'utf-8');
-        return content.split('\n')
-            .map(line => line.trim())
-            .filter(line => line)
-            .map(line => {
-                const [email, ...nameParts] = line.split(/[,;|]/).map(part => part.trim());
-                return {
-                    email,
-                    name: nameParts.join(' ')
-                };
-            });
-    } catch (error) {
-        throw new Error(`Failed to process text file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
 }
 
 function validateData(data: FileData[], config: SmtpConfiguration): { success: boolean; error?: string } {
@@ -247,6 +214,37 @@ function getWebmailConfig(smtpConfig: SmtpConfiguration): any {
     return webmailSettings;
 }
 
+/**
+ * Get API configuration for email providers
+ *
+ * PRODUCTION RECOMMENDATION:
+ * For better reliability, error handling, and deliverability, use dedicated transports:
+ *
+ * 1. Mailgun: Install `nodemailer-mailgun-transport`
+ *    ```typescript
+ *    import mg from 'nodemailer-mailgun-transport';
+ *    const transport = nodemailer.createTransport(mg({
+ *        auth: { api_key: apiKey, domain: domain }
+ *    }));
+ *    ```
+ *
+ * 2. SendGrid: Use official `@sendgrid/mail` SDK
+ *    ```typescript
+ *    import sgMail from '@sendgrid/mail';
+ *    sgMail.setApiKey(apiKey);
+ *    await sgMail.send({ to, from, subject, text, html });
+ *    ```
+ *
+ * 3. Amazon SES: Use official `@aws-sdk/client-ses`
+ *    ```typescript
+ *    import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+ *    const client = new SESClient({ region });
+ *    await client.send(new SendEmailCommand({ ... }));
+ *    ```
+ *
+ * The current implementation uses generic SMTP as a fallback for simplicity,
+ * but dedicated SDKs provide better logging, retry logic, and error handling.
+ */
 function getApiConfig(smtpConfig: SmtpConfiguration): any {
     const apiConfigs: { [key: string]: any } = {
         'mailgun': {

@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import cookieParser from 'cookie-parser';
 import { AppDataSource } from './data-source';
 import emailRoutes from './routes/email';
 import agentRoutes from './routes/agents';
@@ -23,6 +24,15 @@ if (isProduction && !process.env.CORS_ORIGIN) {
   console.error('Missing CORS_ORIGIN in production. Refusing to start.');
   process.exit(1);
 }
+// Always require JWT_SECRET (even in development)
+if (!process.env.JWT_SECRET) {
+  // eslint-disable-next-line no-console
+  console.error('JWT_SECRET is required. Set it in your environment variables.');
+  process.exit(1);
+}
+
+// Cookie parser
+app.use(cookieParser());
 
 // CORS
 app.use(
@@ -110,16 +120,20 @@ app.use(errorHandler);
 
 // Start after DB init
 AppDataSource.initialize()
-  .then(() => {
+  .then(async () => {
     const PORT = process.env.PORT || 3000;
-    // Seed default admin (optional)
-    (async () => {
+
+    // Seed default admin (only if both ADMIN_EMAIL and ADMIN_PASSWORD are set)
+    const rawAdminEmails = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL;
+    const adminPassword = process.env.ADMIN_PASSWORD;
+
+    if (rawAdminEmails && adminPassword) {
       try {
-        const rawAdminEmails = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || 'admin-0@surprise-sender.com,admin@surprise-sender.local';
         const adminEmails: string[] = rawAdminEmails.split(',').map((e) => e.trim()).filter(Boolean);
-        const adminPassword = process.env.ADMIN_PASSWORD || 'admin1234';
-        const userRepo = AppDataSource.getRepository(require('./entities/User').User);
-        const bcrypt = require('bcrypt');
+        const { User } = await import('./entities/User');
+        const bcrypt = await import('bcrypt');
+        const userRepo = AppDataSource.getRepository(User);
+
         for (const email of adminEmails) {
           try {
             let existing = await userRepo.findOne({ where: { email } });
@@ -140,7 +154,10 @@ AppDataSource.initialize()
       } catch (e) {
         console.error('Admin seed failed:', e);
       }
-    })();
+    } else if (!isProduction) {
+      console.log('Admin seeding skipped: Set ADMIN_EMAIL and ADMIN_PASSWORD to seed admin users');
+    }
+
     app.listen(PORT, () => {
       // eslint-disable-next-line no-console
       console.log(`Server running on port ${PORT}`);

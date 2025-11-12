@@ -31,7 +31,16 @@ router.post('/auth/register', async (req, res) => {
     const hashed = await bcrypt.hash(password, 12);
     const user = userRepo.create({ name: resolvedName, email, password: hashed, company, role: 'user', status: 'active' });
     const saved = await userRepo.save(user);
-    const token = jwt.sign({ id: saved.id, email: saved.email }, process.env.JWT_SECRET || 'your-secret-key', { expiresIn: '24h' });
+    const token = jwt.sign({ id: saved.id, email: saved.email }, process.env.JWT_SECRET!, { expiresIn: '24h' });
+
+    // Set HttpOnly cookie for security (protects against XSS attacks)
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
     return res.status(201).json({ success: true, token, user: { id: saved.id, name: saved.name, email: saved.email, role: saved.role, company: saved.company } });
   } catch (e) {
     return res.status(500).json({ success: false, error: 'Registration failed' });
@@ -51,7 +60,16 @@ router.post('/auth/login', async (req, res) => {
     if (!ok) return res.status(401).json({ success: false, error: 'Invalid credentials' });
     user.lastLogin = new Date();
     await userRepo.save(user);
-    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET || 'your-secret-key', { expiresIn: '24h' });
+    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET!, { expiresIn: '24h' });
+
+    // Set HttpOnly cookie for security (protects against XSS attacks)
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
     return res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role, company: user.company } });
   } catch (e) {
     return res.status(500).json({ success: false, error: 'Login failed' });
