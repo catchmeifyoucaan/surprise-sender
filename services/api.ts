@@ -9,30 +9,16 @@ const api = axios.create({
   baseURL: resolvedBaseUrl,
   headers: {
     'Content-Type': 'application/json'
-  }
-});
-
-// Add request interceptor to include token in headers
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('surpriseSenderUser');
-    if (token) {
-      (config.headers as any).Authorization = `Bearer ${token}`;
-    }
-    return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
+  withCredentials: true // Enable sending cookies with requests
+});
 
 // Add response interceptor to handle 401 errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401 && !error.config.url.includes('/auth/')) {
-      // Only remove token and redirect for non-auth endpoints
-      localStorage.removeItem('surpriseSenderUser');
+      // Dispatch logout event for non-auth endpoints
       window.dispatchEvent(new CustomEvent('auth:logout'));
     }
     return Promise.reject(error);
@@ -43,19 +29,12 @@ export const auth = {
   login: async (email: string, password: string) => {
     try {
       const response = await api.post('/auth/login', { email, password });
-      const { token, user } = response.data;
-      
-      if (!token) {
-        throw new Error('No token received');
-      }
+      const { user } = response.data;
 
-      // Store token in localStorage
-      localStorage.setItem('surpriseSenderUser', token);
-      
-      // Set default Authorization header for future requests
-      (api.defaults.headers as any).common['Authorization'] = `Bearer ${token}`;
-      
-      return { user, token };
+      // Cookie is automatically set by the server via Set-Cookie header
+      // No need to manually store the token
+
+      return { user };
     } catch (error) {
       console.error('Login error:', error);
       throw error;

@@ -4,14 +4,20 @@ import { User } from '../entities/User';
 import { AppDataSource } from '../data-source';
 
 export const authenticateJWT = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const token = req.headers.authorization?.split(' ')[1];
+  // Try to get token from cookie first, fall back to Authorization header for backwards compatibility
+  let token = req.cookies?.token;
+  if (!token) {
+    token = req.headers.authorization?.split(' ')[1];
+  }
+
   if (!token) {
     res.status(401).json({ error: 'No token provided' });
     return;
   }
 
   try {
-    const decoded: any = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    // JWT_SECRET is now required at startup, no fallback
+    const decoded: any = jwt.verify(token, process.env.JWT_SECRET!);
     const userRepo = AppDataSource.getRepository(User);
     const user = await userRepo.findOne({ where: { id: decoded.id } });
     if (!user) {
