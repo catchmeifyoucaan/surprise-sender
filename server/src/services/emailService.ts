@@ -187,7 +187,6 @@ class EmailService {
   // Send bulk emails with rate limiting and retry logic
   async sendBulkEmails(
     emails: EmailData[],
-    smtpConfigs: SmtpConfiguration[],
     options: {
       batchSize?: number;
       delayBetweenBatches?: number;
@@ -197,7 +196,7 @@ class EmailService {
       polymorphicConstraints?: string;
       crewId?: string;
     } = {}
-  ): Promise<EmailBatchResult> {
+  ): Promise<{ jobId: string }> {
     const {
       batchSize = 50,
       delayBetweenBatches = 2000,
@@ -269,20 +268,17 @@ class EmailService {
           });
           failed++;
         }
-      }
-      
-      // Delay between batches
-      if (i + batchSize < emails.length) {
-        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
-      }
+        const job = new EmailJob();
+        job.emailData = emailData;
+        job.crewId = crewId;
+        job.useContextualEngine = useContextualEngine;
+        jobs.push(job);
     }
 
-    return {
-      total: emails.length,
-      sent,
-      failed,
-      results
-    };
+    await emailJobRepo.save(jobs);
+
+    // In a real application, you'd return a batch ID or some way to track this
+    return { jobId: 'batch-' + new Date().getTime() };
   }
 
   // Send email using template

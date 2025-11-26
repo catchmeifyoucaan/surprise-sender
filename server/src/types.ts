@@ -14,5 +14,10 @@ export interface EmailData {
   replyTo?: string;
   headers?: Record<string, string>;
   attachments?: EmailAttachment[];
+  recipientMetadata?: {
+    name?: string;
+    company?: string;
+    jobTitle?: string;
+  };
 }
 
