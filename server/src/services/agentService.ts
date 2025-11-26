@@ -336,6 +336,146 @@ Please synthesize all contributions into a coherent, actionable result.
     };
   }
 
+  // Generate contextual email content
+  async generateContextualEmail(
+    crewId: string,
+    baseContent: EmailData,
+    recipientMetadata: { name: string; company?: string; jobTitle?: string },
+    usePhoneticName: boolean = false
+  ): Promise<EmailData> {
+    let phoneticName = recipientMetadata.name;
+    if (usePhoneticName) {
+      phoneticName = await this.getPhoneticName(crewId, recipientMetadata.name);
+    }
+
+    const taskDescription = `Rewrite the following email content to be highly personalized for the recipient.
+Original Subject: ${baseContent.subject}
+Original Body: ${baseContent.body}
+
+Recipient Details:
+- Name: ${recipientMetadata.name}
+- Company: ${recipientMetadata.company || 'N/A'}
+- Job Title: ${recipientMetadata.jobTitle || 'N/A'}
+- Phonetic Name Variation: ${phoneticName}
+
+Instructions:
+1. Rewrite the subject line to be more engaging and personalized.
+2. Rewrite the opening paragraph to directly address the recipient and their context.
+3. If appropriate, subtly incorporate the phonetic name variation to build trust (e.g., mentioning a colleague with that name).
+4. Rewrite the closing to be warm and context-aware.
+5. Keep the core message of the email intact.
+6. Return the result in the format:
+Subject: [New Subject]
+Body: [New Body]`;
+
+    const task: Omit<AgentTask, 'id' | 'status' | 'createdAt' | 'updatedAt'> = {
+      type: 'email',
+      description: taskDescription,
+      priority: 'high',
+      metadata: { baseContent, recipientMetadata }
+    };
+
+    const contextualTask = await this.assignTaskToCrew(crewId, task);
+
+    await this.waitForTask(contextualTask);
+
+    if (contextualTask.status === 'failed') {
+      throw new Error(`Contextual email generation failed: ${contextualTask.result?.error || 'Unknown error'}`);
+    }
+
+    const result = contextualTask.result?.result || '';
+    const subjectMatch = result.match(/Subject:\s*(.+)/i);
+    const bodyMatch = result.match(/Body:\s*([\s\S]*)/i);
+
+    const subject = subjectMatch?.[1]?.trim() || baseContent.subject;
+    const body = bodyMatch?.[1]?.trim() || baseContent.body;
+
+    return {
+      ...baseContent,
+      subject,
+      body
+    };
+  }
+
+  // Generate polymorphic templates
+  async generatePolymorphicTemplates(
+    crewId: string,
+    baseTemplate: string,
+    constraints: string,
+    count: number = 10
+  ): Promise<string[]> {
+    const taskDescription = `Based on the following HTML template, generate ${count} distinct but semantically identical versions.
+
+Base Template:
+${baseTemplate}
+
+Constraints:
+- ${constraints}
+
+Instructions:
+1. Each version must be stylistically different but convey the same core message.
+2. Modify sentence structure, tone, and phrasing.
+3. Do not change the HTML structure or placeholders.
+4. Return the result as a numbered list of HTML bodies.`;
+
+    const task: Omit<AgentTask, 'id' | 'status' | 'createdAt' | 'updatedAt'> = {
+      type: 'content',
+      description: taskDescription,
+      priority: 'medium',
+      metadata: { baseTemplate, constraints, count }
+    };
+
+    const polymorphicTask = await this.assignTaskToCrew(crewId, task);
+
+    await this.waitForTask(polymorphicTask, 60);
+
+    if (polymorphicTask.status === 'failed') {
+      throw new Error(`Polymorphic template generation failed: ${polymorphicTask.result?.error || 'Unknown error'}`);
+    }
+
+    const result = polymorphicTask.result?.result || '';
+
+    // Parse the numbered list of templates
+    const templates = result.split(/^\d+\.\s/m).slice(1).map((t: string) => t.trim());
+
+    if (templates.length === 0 && result.trim().length > 0) {
+      throw new Error('Failed to parse polymorphic templates from AI response.');
+    }
+
+    return templates.length > 0 ? templates : [baseTemplate]; // Fallback to base template
+  }
+
+  // Get phonetic name variations
+  async getPhoneticName(crewId: string, name: string): Promise<string> {
+    const taskDescription = `Find the most common phonetic spelling or variation for the name "${name}".
+Instructions:
+1. Analyze the name and determine its likely origin and pronunciation.
+2. Provide a common alternative spelling or a phonetically similar name.
+3. Return only the name, with no additional text.`;
+
+    const task: Omit<AgentTask, 'id' | 'status' | 'createdAt' | 'updatedAt'> = {
+      type: 'research',
+      description: taskDescription,
+      priority: 'low',
+      metadata: { name }
+    };
+
+    const phoneticTask = await this.assignTaskToCrew(crewId, task);
+
+    try {
+      await this.waitForTask(phoneticTask, 20);
+    } catch (error) {
+      return name; // Timeout, return original name
+    }
+
+    if (phoneticTask.status === 'failed') {
+      return name; // Failed, return original name
+    }
+
+    const result = phoneticTask.result?.result?.trim();
+    return result && result.length > 1 ? result : name;
+  }
+
   // Analyze content using agents
   async analyzeContent(
     crewId: string,
@@ -411,6 +551,18 @@ Always provide helpful, accurate, and actionable responses based on your experti
   // Generate unique ID
   private generateId(): string {
     return `agent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  // Private helper to wait for task completion
+  private async waitForTask(task: AgentTask, timeout: number = 30): Promise<void> {
+    let attempts = 0;
+    while (task.status === 'pending' || task.status === 'in_progress') {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      attempts++;
+      if (attempts >= timeout) {
+        throw new Error(`Task timed out after ${timeout} seconds`);
+      }
+    }
   }
 
   // Private storage for agents
