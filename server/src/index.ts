@@ -121,6 +121,12 @@ app.use(errorHandler);
 // Start after DB init
 AppDataSource.initialize()
   .then(async () => {
+    const { workerService } = await import('./services/workerService');
+    workerService.start();
+
+    const { reputationService } = await import('./services/reputationService');
+    reputationService.startPeriodicHealthChecks();
+
     const PORT = process.env.PORT || 3000;
 
     // Seed default admin (only if both ADMIN_EMAIL and ADMIN_PASSWORD are set)
