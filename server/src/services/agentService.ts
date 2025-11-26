@@ -434,6 +434,7 @@ Instructions:
     }
 
     const result = polymorphicTask.result?.result || '';
+<<<<<<< HEAD
 
     // Parse the numbered list of templates
     const templates = result.split(/^\d+\.\s/m).slice(1).map((t: string) => t.trim());
@@ -442,6 +443,12 @@ Instructions:
       throw new Error('Failed to parse polymorphic templates from AI response.');
     }
 
+=======
+
+    // Parse the numbered list of templates
+    const templates = result.split(/^\d+\.\s/m).slice(1).map((t: string) => t.trim());
+
+>>>>>>> ee274be (Apply patch /tmp/71cb4fee-e307-4a9f-a6b3-01285bbf6fb8.patch)
     return templates.length > 0 ? templates : [baseTemplate]; // Fallback to base template
   }
 

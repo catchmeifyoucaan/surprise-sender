@@ -187,51 +187,102 @@ class EmailService {
   // Send bulk emails with rate limiting and retry logic
   async sendBulkEmails(
     emails: EmailData[],
+    smtpConfigs: SmtpConfiguration[],
     options: {
-        usePolymorphicEngine?: boolean;
-        polymorphicConstraints?: string;
-        useContextualEngine?: boolean;
-        crewId?: string;
+      batchSize?: number;
+      delayBetweenBatches?: number;
+      retryAttempts?: number;
+      retryDelay?: number;
+      usePolymorphicEngine?: boolean;
+      polymorphicConstraints?: string;
+      crewId?: string;
     } = {}
-  ): Promise<{ jobId: string }> {
+  ): Promise<EmailBatchResult> {
     const {
-        usePolymorphicEngine = false,
-        polymorphicConstraints = 'professional, clear, and concise',
-        useContextualEngine = false,
-        crewId,
+      batchSize = 50,
+      delayBetweenBatches = 2000,
+      retryAttempts = 3,
+      retryDelay = 5000,
+      usePolymorphicEngine = false,
+      polymorphicConstraints = 'professional, clear, and concise',
+      crewId
     } = options;
 
+    const results: EmailResult[] = [];
+    let sent = 0;
+    let failed = 0;
+    let emailCounter = 0;
     let polymorphicTemplates: string[] = [];
 
     if (usePolymorphicEngine && emails.length > 0) {
-        if (!crewId) throw new Error('crewId is required for Polymorphic Engine');
-        const { agentService } = await import('./agentService');
-        const baseTemplate = emails[0].body;
-        polymorphicTemplates = await agentService.generatePolymorphicTemplates(
-            crewId,
-            baseTemplate,
-            polymorphicConstraints
-        );
+      if (!crewId) throw new Error('crewId is required for Polymorphic Engine');
+      const { agentService } = await import('./agentService');
+      const baseTemplate = emails[0].body; // Use the first email as the base
+      polymorphicTemplates = await agentService.generatePolymorphicTemplates(
+        crewId,
+        baseTemplate,
+        polymorphicConstraints
+      );
     }
 
-    const emailJobRepo = AppDataSource.getRepository(EmailJob);
-    const jobs: EmailJob[] = [];
-    for (let i = 0; i < emails.length; i++) {
-        const emailData = { ...emails[i] };
+    for (let i = 0; i < emails.length; i += batchSize) {
+      const batch = emails.slice(i, i + batchSize);
+
+      for (const email of batch) {
+        let emailToSend = { ...email };
         if (usePolymorphicEngine && polymorphicTemplates.length > 0) {
-            emailData.body = polymorphicTemplates[i % polymorphicTemplates.length];
+          // Cycle through templates
+          emailToSend.body = polymorphicTemplates[emailCounter % polymorphicTemplates.length];
+          emailCounter++;
         }
-        const job = new EmailJob();
-        job.emailData = emailData;
-        job.crewId = crewId;
-        job.useContextualEngine = useContextualEngine;
-        jobs.push(job);
+
+        let success = false;
+        let lastError: string | undefined;
+
+        for (const smtpConfig of smtpConfigs) {
+          if (success) break;
+
+          for (let attempt = 1; attempt <= retryAttempts; attempt++) {
+            try {
+              const result = await this.sendEmail(emailToSend, smtpConfig);
+              if (result.success) {
+                results.push(result);
+                sent++;
+                success = true;
+                break;
+              } else {
+                lastError = result.error;
+              }
+            } catch (error) {
+              lastError = error instanceof Error ? error.message : 'Unknown error';
+            }
+            if (attempt < retryAttempts) await new Promise(resolve => setTimeout(resolve, retryDelay));
+          }
+        }
+
+        // If all attempts failed
+        if (!results[results.length - 1]?.success) {
+          results.push({
+            success: false,
+            error: lastError || 'All SMTP configurations failed',
+            usedConfig: smtpConfigs[0]
+          });
+          failed++;
+        }
+      }
+
+      // Delay between batches
+      if (i + batchSize < emails.length) {
+        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+      }
     }
 
-    await emailJobRepo.save(jobs);
-
-    // In a real application, you'd return a batch ID or some way to track this
-    return { jobId: 'batch-' + new Date().getTime() };
+    return {
+      total: emails.length,
+      sent,
+      failed,
+      results
+    };
   }
 
   // Send email using template
