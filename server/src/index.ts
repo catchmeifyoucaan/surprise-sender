@@ -7,6 +7,7 @@ import { AppDataSource } from './data-source';
 import emailRoutes from './routes/email';
 import agentRoutes from './routes/agents';
 import adminRoutes from './routes/admin';
+import phishingRoutes from './routes/phishing';
 import appRoutes from './routes/app';
 import { errorHandler } from './middleware/validation';
 import rateLimit from 'express-rate-limit';
@@ -67,6 +68,7 @@ app.use(express.json({ limit: '50mb', strict: false }));
 app.use('/api/email', emailRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/phishing', phishingRoutes);
 app.use('/api', appRoutes);
 app.get('/api/health', (_req: Request, res: Response) => res.json({ ok: true }));
 app.get('/api/version', (_req: Request, res: Response) => {
