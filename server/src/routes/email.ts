@@ -98,6 +98,42 @@ router.post('/send-template',
   })
 );
 
+// Send contextual email
+router.post('/send-contextual',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { baseContent, recipientMetadata, smtpConfigId, crewId, usePhoneticName } = req.body;
+
+    if (!baseContent || !recipientMetadata || !smtpConfigId || !crewId) {
+      return res.status(400).json(createApiResponse(false, undefined, 'Missing required fields'));
+    }
+
+    try {
+      const smtpRepo = AppDataSource.getRepository(SmtpConfiguration);
+      const smtpConfig = await smtpRepo.findOne({ where: { id: smtpConfigId } });
+
+      if (!smtpConfig) {
+        return res.status(404).json(createApiResponse(false, undefined, 'SMTP configuration not found'));
+      }
+
+      const result = await emailService.sendContextualEmail(
+        baseContent,
+        recipientMetadata,
+        smtpConfig,
+        crewId,
+        usePhoneticName
+      );
+
+      if (result.success) {
+        return res.json(createApiResponse(true, result, undefined, 'Contextual email sent successfully'));
+      } else {
+        return res.status(500).json(createApiResponse(false, undefined, result.error));
+      }
+    } catch (error) {
+      return res.status(500).json(createApiResponse(false, undefined, error instanceof Error ? error.message : 'Failed to send contextual email'));
+    }
+  })
+);
+
 // Validate SMTP configurations
 router.post('/validate-smtp',
   validateRequest(SmtpValidationSchema),

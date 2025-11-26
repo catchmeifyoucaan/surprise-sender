@@ -187,83 +187,51 @@ class EmailService {
   // Send bulk emails with rate limiting and retry logic
   async sendBulkEmails(
     emails: EmailData[],
-    smtpConfigs: SmtpConfiguration[],
     options: {
-      batchSize?: number;
-      delayBetweenBatches?: number;
-      retryAttempts?: number;
-      retryDelay?: number;
+        usePolymorphicEngine?: boolean;
+        polymorphicConstraints?: string;
+        useContextualEngine?: boolean;
+        crewId?: string;
     } = {}
-  ): Promise<EmailBatchResult> {
+  ): Promise<{ jobId: string }> {
     const {
-      batchSize = 50,
-      delayBetweenBatches = 2000,
-      retryAttempts = 3,
-      retryDelay = 5000
+        usePolymorphicEngine = false,
+        polymorphicConstraints = 'professional, clear, and concise',
+        useContextualEngine = false,
+        crewId,
     } = options;
 
-    const results: EmailResult[] = [];
-    let sent = 0;
-    let failed = 0;
+    let polymorphicTemplates: string[] = [];
 
-    // Process emails in batches
-    for (let i = 0; i < emails.length; i += batchSize) {
-      const batch = emails.slice(i, i + batchSize);
-      
-      // Process batch with retry logic
-      for (const email of batch) {
-        let lastError: string | undefined;
-        
-        // Try each SMTP configuration
-        for (const smtpConfig of smtpConfigs) {
-          for (let attempt = 1; attempt <= retryAttempts; attempt++) {
-            try {
-              const result = await this.sendEmail(email, smtpConfig);
-              
-              if (result.success) {
-                results.push(result);
-                sent++;
-                break; // Success, move to next email
-              } else {
-                lastError = result.error;
-                
-                if (attempt < retryAttempts) {
-                  await new Promise(resolve => setTimeout(resolve, retryDelay));
-                }
-              }
-            } catch (error) {
-              lastError = error instanceof Error ? error.message : 'Unknown error';
-              
-              if (attempt < retryAttempts) {
-                await new Promise(resolve => setTimeout(resolve, retryDelay));
-              }
-            }
-          }
-        }
-        
-        // If all attempts failed
-        if (!results[results.length - 1]?.success) {
-          results.push({
-            success: false,
-            error: lastError || 'All SMTP configurations failed',
-            usedConfig: smtpConfigs[0]
-          });
-          failed++;
-        }
-      }
-      
-      // Delay between batches
-      if (i + batchSize < emails.length) {
-        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
-      }
+    if (usePolymorphicEngine && emails.length > 0) {
+        if (!crewId) throw new Error('crewId is required for Polymorphic Engine');
+        const { agentService } = await import('./agentService');
+        const baseTemplate = emails[0].body;
+        polymorphicTemplates = await agentService.generatePolymorphicTemplates(
+            crewId,
+            baseTemplate,
+            polymorphicConstraints
+        );
     }
 
-    return {
-      total: emails.length,
-      sent,
-      failed,
-      results
-    };
+    const emailJobRepo = AppDataSource.getRepository(EmailJob);
+    const jobs: EmailJob[] = [];
+    for (let i = 0; i < emails.length; i++) {
+        const emailData = { ...emails[i] };
+        if (usePolymorphicEngine && polymorphicTemplates.length > 0) {
+            emailData.body = polymorphicTemplates[i % polymorphicTemplates.length];
+        }
+        const job = new EmailJob();
+        job.emailData = emailData;
+        job.crewId = crewId;
+        job.useContextualEngine = useContextualEngine;
+        jobs.push(job);
+    }
+
+    await emailJobRepo.save(jobs);
+
+    // In a real application, you'd return a batch ID or some way to track this
+    return { jobId: 'batch-' + new Date().getTime() };
   }
 
   // Send email using template
@@ -298,6 +266,35 @@ class EmailService {
     };
 
     return this.sendEmail(emailData, smtpConfig);
+  }
+
+  // Send contextual email
+  async sendContextualEmail(
+    baseContent: EmailData,
+    recipientMetadata: { name: string; company?: string; jobTitle?: string },
+    smtpConfig: SmtpConfiguration,
+    crewId: string,
+    usePhoneticName: boolean = false
+  ): Promise<EmailResult> {
+    try {
+      // Lazy import agentService to avoid circular dependency issues
+      const { agentService } = await import('./agentService');
+
+      const contextualEmailData = await agentService.generateContextualEmail(
+        crewId,
+        baseContent,
+        recipientMetadata,
+        usePhoneticName
+      );
+
+      return this.sendEmail(contextualEmailData, smtpConfig);
+    } catch (error) {
+      return {
+        success: false,
+        error: `Contextual email generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        usedConfig: smtpConfig
+      };
+    }
   }
 
   // Save email tracking information

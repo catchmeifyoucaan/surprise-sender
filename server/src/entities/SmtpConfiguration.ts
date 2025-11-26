@@ -104,6 +104,12 @@ export class SmtpConfiguration {
         allowedFileTypes: string[];
     };
 
+    @Column({ type: 'int', default: 100, comment: 'Reputation Score (R-Score) from 0 to 100' })
+    reputationScore: number;
+
+    @Column({ type: 'datetime', nullable: true })
+    healthCheckLastRun: Date;
+
     @ManyToOne(() => User)
     @JoinColumn({ name: 'userId' })
     user: User;

@@ -3,6 +3,9 @@ import { AuthProvider } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import SettingsPage from './pages/SettingsPage';
+import PhishletsPage from './pages/Phishlets';
+import SessionsPage from './pages/Sessions';
+import LandingPageBuilderPage from './pages/LandingPageBuilder';
 import PrivateRoute from './components/PrivateRoute';
 
 const router = createBrowserRouter([
@@ -17,6 +20,18 @@ const router = createBrowserRouter([
   {
     path: '/settings',
     element: <PrivateRoute><SettingsPage /></PrivateRoute>
+  },
+  {
+    path: '/phishlets',
+    element: <PrivateRoute><PhishletsPage /></PrivateRoute>
+  },
+  {
+    path: '/sessions',
+    element: <PrivateRoute><SessionsPage /></PrivateRoute>
+  },
+  {
+    path: '/landing-page-builder',
+    element: <PrivateRoute><LandingPageBuilderPage /></PrivateRoute>
   }
 ], {
   future: {
