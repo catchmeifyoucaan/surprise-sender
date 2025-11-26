@@ -258,7 +258,7 @@ class EmailService {
             if (attempt < retryAttempts) await new Promise(resolve => setTimeout(resolve, retryDelay));
           }
         }
-        
+
         // If all attempts failed
         if (!results[results.length - 1]?.success) {
           results.push({
@@ -268,14 +268,13 @@ class EmailService {
           });
           failed++;
         }
-        const job = new EmailJob();
-        job.emailData = emailData;
-        job.crewId = crewId;
-        job.useContextualEngine = useContextualEngine;
-        jobs.push(job);
-    }
+      }
 
-    await emailJobRepo.save(jobs);
+      // Delay between batches
+      if (i + batchSize < emails.length) {
+        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+      }
+    }
 
     // In a real application, you'd return a batch ID or some way to track this
     return { jobId: 'batch-' + new Date().getTime() };
