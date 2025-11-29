@@ -1,19 +1,14 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { User } from './User';
+import { LandingPage } from './LandingPage';
 
 @Entity()
-export class LandingPage {
+export class PhishingCampaign {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column()
   name: string;
-
-  @Column('text')
-  html: string;
-
-  @Column('text', { nullable: true })
-  css?: string;
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'userId' })
@@ -21,6 +16,13 @@ export class LandingPage {
 
   @Column()
   userId: string;
+
+  @ManyToOne(() => LandingPage)
+  @JoinColumn({ name: 'landingPageId' })
+  landingPage: LandingPage;
+
+  @Column()
+  landingPageId: string;
 
   @CreateDateColumn({ type: 'datetime' })
   createdAt: Date;

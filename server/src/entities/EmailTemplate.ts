@@ -1,57 +1,45 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne } from "typeorm";
-import { User } from "./User";
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { User } from './User';
 
-@Entity('email_templates')
+@Entity()
 export class EmailTemplate {
-    @PrimaryGeneratedColumn("uuid")
-    id!: string;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
-    @Column()
-    name!: string;
+  @Column()
+  name: string;
 
-    @Column()
-    subject!: string;
+  @Column()
+  subject: string;
 
-    @Column("text")
-    body!: string;
+  @Column('text')
+  body: string;
 
-    @Column({ default: true })
-    isHtml!: boolean;
+  @Column()
+  isHtml: boolean;
 
-    @Column('simple-array', { nullable: true })
-    dynamicPlaceholders!: string[];
+  @Column('simple-array')
+  variables: string[];
 
-    @Column('simple-json', { nullable: true })
-    metadata!: {
-        category?: string;
-        tags?: string[];
-        lastUsed?: Date;
-        usageCount?: number;
-        variables?: string[];
-        attachments?: string[];
-    };
+  @Column({ nullable: true })
+  category?: string;
 
-    @ManyToOne(() => User)
-    user!: User;
+  @Column('simple-array', { nullable: true })
+  tags?: string[];
 
-    @CreateDateColumn()
-    createdAt!: Date;
+  @Column({ default: 0 })
+  usageCount: number;
 
-    @UpdateDateColumn()
-    updatedAt!: Date;
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'userId' })
+  user: User;
 
-    constructor() {
-        this.isHtml = true;
-        this.dynamicPlaceholders = [];
-        this.metadata = {
-            category: '',
-            tags: [],
-            lastUsed: new Date(),
-            usageCount: 0,
-            variables: [],
-            attachments: []
-        };
-        this.createdAt = new Date();
-        this.updatedAt = new Date();
-    }
-} 
+  @Column()
+  userId: string;
+
+  @CreateDateColumn({ type: 'datetime' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ type: 'datetime' })
+  updatedAt: Date;
+}

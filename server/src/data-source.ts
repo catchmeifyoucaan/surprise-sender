@@ -1,5 +1,5 @@
 import { DataSource } from 'typeorm';
-import { User, SmtpConfiguration, EmailTracking, UserActivity, EmailTemplate, Campaign, Agent, UserPreferencesEntity } from './entities';
+import { User, SmtpConfiguration, EmailTracking, UserActivity, EmailTemplate, Campaign, Agent, UserPreferencesEntity, PhishingCampaign, LandingPage } from './entities';
 import { ApiKeyEntity } from './entities/ApiKeyEntity';
 import { WebmailCredential, CpanelCredential, PhpMyAdminCredential, EmailAccount, EmailAddress } from './entities/WebCredentials';
 import fs from 'fs';
@@ -48,7 +48,9 @@ const baseOptions = {
     CpanelCredential,
     PhpMyAdminCredential,
     EmailAccount,
-    EmailAddress
+    EmailAddress,
+    PhishingCampaign,
+    LandingPage
   ],
   migrations: isProduction ? ['dist/migrations/*.js'] : [],
   subscribers: []

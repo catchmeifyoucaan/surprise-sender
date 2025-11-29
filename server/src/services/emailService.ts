@@ -1,8 +1,9 @@
-import nodemailer, { Transporter, SentMessageInfo, TransportOptions } from 'nodemailer';
-import { SmtpConfiguration, EmailTracking } from '../entities';
-import { AppDataSource } from '../data-source';
+import { SmtpConfiguration } from '../entities';
 import { EmailData } from '../types';
-import { createApiResponse } from '../middleware/validation';
+import { SmtpService } from './smtpService';
+import { TemplateService, EmailTemplate } from './templateService';
+import { TrackingService } from './trackingService';
+import { JobService } from './jobService';
 import { validateSmtpConfig } from '../utils/smtp';
 
 interface EmailResult {
@@ -13,126 +14,28 @@ interface EmailResult {
   trackingId?: string;
 }
 
-interface EmailBatchResult {
-  total: number;
-  sent: number;
-  failed: number;
-  results: EmailResult[];
-}
+export class EmailService {
+  private jobService: JobService;
 
-interface EmailTemplate {
-  id: string;
-  name: string;
-  subject: string;
-  body: string;
-  isHtml: boolean;
-  variables: string[];
-}
+  constructor(
+    private smtpService: SmtpService,
+    private templateService: TemplateService,
+    private trackingService: TrackingService
+  ) {}
 
-class EmailService {
-  private transporterPool: Map<string, Transporter> = new Map();
-  private emailTemplates: Map<string, EmailTemplate> = new Map();
-
-  constructor() {
-    this.initializeTemplates();
+  public setJobService(jobService: JobService) {
+    this.jobService = jobService;
   }
 
-  // Initialize email templates
-  private initializeTemplates(): void {
-    const templates: EmailTemplate[] = [
-      {
-        id: 'welcome',
-        name: 'Welcome Email',
-        subject: 'Welcome to {{company}}!',
-        body: `
-          <h1>Welcome to {{company}}!</h1>
-          <p>Hi {{name}},</p>
-          <p>Thank you for joining us. We're excited to have you on board!</p>
-          <p>Best regards,<br>The {{company}} Team</p>
-        `,
-        isHtml: true,
-        variables: ['company', 'name']
-      },
-      {
-        id: 'newsletter',
-        name: 'Newsletter Template',
-        subject: '{{company}} Newsletter - {{date}}',
-        body: `
-          <h1>{{company}} Newsletter</h1>
-          <p>Hi {{name}},</p>
-          <p>{{content}}</p>
-          <p>Best regards,<br>The {{company}} Team</p>
-        `,
-        isHtml: true,
-        variables: ['company', 'name', 'date', 'content']
-      },
-      {
-        id: 'promotional',
-        name: 'Promotional Email',
-        subject: '{{offer}} - Limited Time Only!',
-        body: `
-          <h1>{{offer}}</h1>
-          <p>Hi {{name}},</p>
-          <p>{{description}}</p>
-          <p><strong>Valid until: {{expiryDate}}</strong></p>
-          <p>Best regards,<br>The {{company}} Team</p>
-        `,
-        isHtml: true,
-        variables: ['offer', 'name', 'description', 'expiryDate', 'company']
-      }
-    ];
-
-    templates.forEach(template => {
-      this.emailTemplates.set(template.id, template);
-    });
-  }
-
-  // Get or create SMTP transporter
-  private async getTransporter(config: SmtpConfiguration): Promise<Transporter> {
-    const key = `${config.host}:${config.port}:${config.username}`;
-    
-    if (this.transporterPool.has(key)) {
-      return this.transporterPool.get(key)!;
-    }
-
-    const transporter = nodemailer.createTransport({
-      host: config.host,
-      port: typeof config.port === 'string' ? parseInt(config.port) : config.port,
-      secure: config.port === 465 || config.secure,
-      auth: {
-        user: config.username,
-        pass: config.password,
-      },
-      pool: true,
-      maxConnections: 5,
-      maxMessages: 100,
-      rateLimit: 14, // 14 messages per second
-      rateDelta: 1000, // 1 second
-    } as TransportOptions);
-
-    // Verify connection
+  public async sendEmail(emailData: EmailData, smtpConfig: SmtpConfiguration): Promise<EmailResult> {
     try {
-      await transporter.verify();
-      this.transporterPool.set(key, transporter);
-      return transporter;
-    } catch (error) {
-      throw new Error(`SMTP connection failed for ${config.host}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  // Send a single email
-  async sendEmail(emailData: EmailData, smtpConfig: SmtpConfiguration): Promise<EmailResult> {
-    try {
-      // Validate SMTP configuration
       const validation = await validateSmtpConfig(smtpConfig);
       if (!validation.success) {
         throw new Error(`SMTP validation failed: ${validation.error}`);
       }
 
-      // Get transporter
-      const transporter = await this.getTransporter(smtpConfig);
+      const transporter = await this.smtpService.getTransporter(smtpConfig);
 
-      // Prepare email options
       const mailOptions: import('nodemailer').SendMailOptions = {
         from: smtpConfig.fromEmail || smtpConfig.username,
         to: emailData.to,
@@ -149,18 +52,14 @@ class EmailService {
         }))
       };
 
-      // Send email
-      const info: SentMessageInfo = await transporter.sendMail(mailOptions);
-      
+      const info = await transporter.sendMail(mailOptions);
+
       if (!info.messageId) {
         throw new Error('No message ID returned from SMTP server');
       }
 
-      // Save tracking information
-      const trackingId = await this.saveEmailTracking(emailData, smtpConfig, info, 'delivered');
-
-      // Update SMTP configuration stats
-      await this.updateSmtpStats(smtpConfig, true);
+      const trackingId = await this.trackingService.saveEmailTracking(emailData, smtpConfig, info, 'delivered');
+      await this.trackingService.updateSmtpStats(smtpConfig, true);
 
       return {
         success: true,
@@ -168,13 +67,9 @@ class EmailService {
         usedConfig: smtpConfig,
         trackingId
       };
-
     } catch (error) {
-      // Save failed tracking
-      await this.saveEmailTracking(emailData, smtpConfig, null, 'failed', error instanceof Error ? error.message : 'Unknown error');
-      
-      // Update SMTP configuration stats
-      await this.updateSmtpStats(smtpConfig, false);
+      await this.trackingService.saveEmailTracking(emailData, smtpConfig, null, 'failed', error instanceof Error ? error.message : 'Unknown error');
+      await this.trackingService.updateSmtpStats(smtpConfig, false);
 
       return {
         success: false,
@@ -184,104 +79,11 @@ class EmailService {
     }
   }
 
-  // Send bulk emails with rate limiting and retry logic
-  async sendBulkEmails(
-    emails: EmailData[],
-    options: {
-      batchSize?: number;
-      delayBetweenBatches?: number;
-      retryAttempts?: number;
-      retryDelay?: number;
-      usePolymorphicEngine?: boolean;
-      polymorphicConstraints?: string;
-      crewId?: string;
-    } = {}
-  ): Promise<{ jobId: string }> {
-    const {
-      batchSize = 50,
-      delayBetweenBatches = 2000,
-      retryAttempts = 3,
-      retryDelay = 5000,
-      usePolymorphicEngine = false,
-      polymorphicConstraints = 'professional, clear, and concise',
-      crewId
-    } = options;
-
-    const results: EmailResult[] = [];
-    let sent = 0;
-    let failed = 0;
-    let emailCounter = 0;
-    let polymorphicTemplates: string[] = [];
-
-    if (usePolymorphicEngine && emails.length > 0) {
-      if (!crewId) throw new Error('crewId is required for Polymorphic Engine');
-      const { agentService } = await import('./agentService');
-      const baseTemplate = emails[0].body; // Use the first email as the base
-      polymorphicTemplates = await agentService.generatePolymorphicTemplates(
-        crewId,
-        baseTemplate,
-        polymorphicConstraints
-      );
-    }
-
-    for (let i = 0; i < emails.length; i += batchSize) {
-      const batch = emails.slice(i, i + batchSize);
-
-      for (const email of batch) {
-        let emailToSend = { ...email };
-        if (usePolymorphicEngine && polymorphicTemplates.length > 0) {
-          // Cycle through templates
-          emailToSend.body = polymorphicTemplates[emailCounter % polymorphicTemplates.length];
-          emailCounter++;
-        }
-
-        let success = false;
-        let lastError: string | undefined;
-
-        for (const smtpConfig of smtpConfigs) {
-          if (success) break;
-
-          for (let attempt = 1; attempt <= retryAttempts; attempt++) {
-            try {
-              const result = await this.sendEmail(emailToSend, smtpConfig);
-              if (result.success) {
-                results.push(result);
-                sent++;
-                success = true;
-                break;
-              } else {
-                lastError = result.error;
-              }
-            } catch (error) {
-              lastError = error instanceof Error ? error.message : 'Unknown error';
-            }
-            if (attempt < retryAttempts) await new Promise(resolve => setTimeout(resolve, retryDelay));
-          }
-        }
-
-        // If all attempts failed
-        if (!results[results.length - 1]?.success) {
-          results.push({
-            success: false,
-            error: lastError || 'All SMTP configurations failed',
-            usedConfig: smtpConfigs[0]
-          });
-          failed++;
-        }
-      }
-
-      // Delay between batches
-      if (i + batchSize < emails.length) {
-        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
-      }
-    }
-
-    // In a real application, you'd return a batch ID or some way to track this
-    return { jobId: 'batch-' + new Date().getTime() };
+  public async sendBulkEmail(emails: EmailData[], smtpConfigs: SmtpConfiguration[]): Promise<void> {
+    await this.jobService.addBulkEmailJob(emails, smtpConfigs);
   }
 
-  // Send email using template
-  async sendTemplatedEmail(
+  public async sendTemplatedEmail(
     templateId: string,
     variables: Record<string, string>,
     recipient: string,
@@ -289,12 +91,11 @@ class EmailService {
     customSubject?: string,
     customBody?: string
   ): Promise<EmailResult> {
-    const template = this.emailTemplates.get(templateId);
+    const template = await this.templateService.getTemplate(templateId);
     if (!template) {
       throw new Error(`Email template '${templateId}' not found`);
     }
 
-    // Replace variables in template
     let subject = customSubject || template.subject;
     let body = customBody || template.body;
 
@@ -314,8 +115,11 @@ class EmailService {
     return this.sendEmail(emailData, smtpConfig);
   }
 
-  // Send contextual email
-  async sendContextualEmail(
+  public async getTemplates(): Promise<EmailTemplate[]> {
+    return this.templateService.getTemplates();
+  }
+
+  public async sendContextualEmail(
     baseContent: EmailData,
     recipientMetadata: { name: string; company?: string; jobTitle?: string },
     smtpConfig: SmtpConfiguration,
@@ -342,112 +146,4 @@ class EmailService {
       };
     }
   }
-
-  // Save email tracking information
-  private async saveEmailTracking(
-    emailData: EmailData,
-    smtpConfig: SmtpConfiguration,
-    info: SentMessageInfo | null,
-    status: 'delivered' | 'failed',
-    error?: string
-  ): Promise<string> {
-    const trackingRepo = AppDataSource.getRepository(EmailTracking);
-    
-    const tracking = trackingRepo.create({
-      email: emailData.to,
-      subject: emailData.subject,
-      status,
-      details: info ? `Message ID: ${info.messageId}` : error || 'Unknown error',
-      smtpConfigId: smtpConfig.id
-    });
-
-    const savedTracking = await trackingRepo.save(tracking);
-    return savedTracking.id;
-  }
-
-  // Update SMTP configuration statistics
-  private async updateSmtpStats(smtpConfig: SmtpConfiguration, success: boolean): Promise<void> {
-    const smtpRepo = AppDataSource.getRepository(SmtpConfiguration);
-    
-    if (success) {
-      smtpConfig.currentEmailsSent = (smtpConfig.currentEmailsSent || 0) + 1;
-      smtpConfig.lastUsed = new Date();
-    }
-    
-    await smtpRepo.save(smtpConfig);
-  }
-
-  // Get email templates
-  getTemplates(): EmailTemplate[] {
-    return Array.from(this.emailTemplates.values());
-  }
-
-  // Get template by ID
-  getTemplate(templateId: string): EmailTemplate | undefined {
-    return this.emailTemplates.get(templateId);
-  }
-
-  // Add custom template
-  addTemplate(template: EmailTemplate): void {
-    this.emailTemplates.set(template.id, template);
-  }
-
-  // Remove template
-  removeTemplate(templateId: string): boolean {
-    return this.emailTemplates.delete(templateId);
-  }
-
-  // Get email tracking statistics
-  async getTrackingStats(timeRange: '1d' | '7d' | '30d' | '90d' = '7d'): Promise<any> {
-    const trackingRepo = AppDataSource.getRepository(EmailTracking);
-    
-    const now = new Date();
-    const timeRanges = {
-      '1d': new Date(now.getTime() - 24 * 60 * 60 * 1000),
-      '7d': new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
-      '30d': new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
-      '90d': new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-    };
-
-    const startDate = timeRanges[timeRange];
-
-    const { MoreThan } = await import('typeorm');
-    const [total, delivered, failed] = await Promise.all([
-      trackingRepo.count({ where: { timestamp: MoreThan(startDate) } }),
-      trackingRepo.count({ where: { timestamp: MoreThan(startDate), status: 'delivered' } }),
-      trackingRepo.count({ where: { timestamp: MoreThan(startDate), status: 'failed' } })
-    ]);
-
-    return {
-      total,
-      delivered,
-      failed,
-      successRate: total > 0 ? Math.round((delivered / total) * 100) : 0,
-      timeRange
-    };
-  }
-
-  // Get recent email activity
-  async getRecentActivity(limit: number = 50): Promise<EmailTracking[]> {
-    const trackingRepo = AppDataSource.getRepository(EmailTracking);
-    
-    return trackingRepo.find({
-      order: { timestamp: 'DESC' },
-      take: limit
-    });
-  }
-
-  // Clean up transporters
-  async cleanup(): Promise<void> {
-    for (const transporter of this.transporterPool.values()) {
-      try {
-        await transporter.close();
-      } catch (error) {
-        console.error('Error closing transporter:', error);
-      }
-    }
-    this.transporterPool.clear();
-  }
 }
-
-export const emailService = new EmailService();
