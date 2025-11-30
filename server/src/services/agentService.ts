@@ -36,7 +36,7 @@ interface AgentCrew {
   updatedAt: Date;
 }
 
-class AgentService {
+export class AgentService {
   private ai: GoogleGenerativeAI | null = null;
   private crews: Map<string, AgentCrew> = new Map();
   private tasks: Map<string, AgentTask> = new Map();

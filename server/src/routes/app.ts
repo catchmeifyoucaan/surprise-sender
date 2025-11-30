@@ -12,6 +12,7 @@ import nodemailer from 'nodemailer';
 import https from 'https';
 import http from 'http';
 import { URL } from 'url';
+import * as ExcelJS from 'exceljs';
 
 const router = Router();
 
@@ -209,7 +210,6 @@ router.post('/smtp/import-configs', authenticateJWT, upload.single('file'), asyn
 
     const fs = (await import('fs')).promises as any;
     const path = await import('path');
-    const xlsxLib: any = await import('xlsx');
 
     const ext = path.extname(req.file.originalname).toLowerCase();
     const raw = await fs.readFile(req.file.path, 'utf-8').catch(() => null);
@@ -225,14 +225,23 @@ router.post('/smtp/import-configs', authenticateJWT, upload.single('file'), asyn
     };
 
     if (ext === '.xlsx' || ext === '.xls') {
-      const wb = xlsxLib.readFile(req.file.path);
-      const sheetName = wb.SheetNames[0];
-      const ws = wb.Sheets[sheetName];
-      const json: any[] = xlsxLib.utils.sheet_to_json(ws);
-      for (const r of json) {
-        const get = (k: string) => r[k] ?? r[k.toLowerCase()] ?? r[k.toUpperCase()];
-        pushIfValid(get('host'), get('port'), get('username'), get('password'), get('secure'), get('name'));
-      }
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(req.file.path);
+      const worksheet = workbook.worksheets[0];
+      const header: string[] = [];
+      worksheet.getRow(1).eachCell({ includeEmpty: true }, (cell) => {
+        header.push(cell.value as string);
+      });
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber > 1) {
+          const rowData: any = {};
+          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            rowData[header[colNumber - 1]] = cell.value;
+          });
+          const get = (k: string) => rowData[k] ?? rowData[k.toLowerCase()] ?? rowData[k.toUpperCase()];
+          pushIfValid(get('host'), get('port'), get('username'), get('password'), get('secure'), get('name'));
+        }
+      });
     } else if (ext === '.csv') {
       const text = raw || '';
       const lines = text.split(/\r?\n/).filter((l: string) => l.trim());

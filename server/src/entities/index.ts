@@ -8,4 +8,5 @@ export { Agent } from './Agent';
 export { UserPreferencesEntity } from './UserPreferences';
 export { ApiKeyEntity } from './ApiKeyEntity';
 export { LandingPage } from './LandingPage';
+export { PhishingCampaign } from './phishing';
 export { WebmailCredential, CpanelCredential, PhpMyAdminCredential, EmailAccount, EmailAddress } from './WebCredentials';

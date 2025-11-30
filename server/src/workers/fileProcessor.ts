@@ -1,7 +1,7 @@
 import { parentPort, workerData } from 'worker_threads';
 import * as fs from 'fs';
 import * as csv from 'csv-parse';
-import * as xlsx from 'xlsx';
+import * as ExcelJS from 'exceljs';
 import { promisify } from 'util';
 
 const readFileAsync = promisify(fs.readFile);
@@ -39,10 +39,21 @@ async function processCsvFile(filePath: string): Promise<FileData[]> {
 
 async function processExcelFile(filePath: string): Promise<FileData[]> {
     try {
-        const workbook = xlsx.readFile(filePath);
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        return xlsx.utils.sheet_to_json<FileData>(worksheet);
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(filePath);
+        const worksheet = workbook.worksheets[0];
+        const data: FileData[] = [];
+        worksheet.eachRow((row, rowNumber) => {
+            if (rowNumber > 1) { // Skip header row
+                const rowData: any = {};
+                row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                    const headerCell = worksheet.getRow(1).getCell(colNumber);
+                    rowData[headerCell.value as string] = cell.value;
+                });
+                data.push(rowData);
+            }
+        });
+        return data;
     } catch (error) {
         throw new Error(`Failed to process Excel file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
